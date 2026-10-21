@@ -1,0 +1,151 @@
+# MacPulse
+
+原生菜单栏监控工具。本机部署适配环境为 **MacBook Pro（Mac14,9）/ Apple M2 Pro / 16 GB / macOS 27.0.1**。原始版本另在 Apple M5 Pro / 48 GB 上验证。
+
+本机只读硬件诊断已确认：10 个 CPU 核心、CPU/GPU 占用率与温度、SMC 系统功耗、93 项温度传感器、两路风扇、物理网卡完整计数及磁盘读写均可读取。风扇停转时会正常显示 0 RPM。内存容量与硬件名称由系统自动读取。
+
+本机内置 Retina 屏幕为 1512 × 982 逻辑点、2 倍缩放，可用高度 949 pt，能够容纳完整的 780 pt 总览面板；已检查完整深色面板与 480 pt 紧凑浅色面板的离屏渲染。安装位置为 `~/Applications/MacPulse.app`，已通过安装后签名验证、内置自检及真实硬件诊断。
+
+## 界面
+
+1.5 版下拉面板仅显示总览，使用 300 pt 宽度，采用两列指标，网络与内存/磁盘并排显示，名称和数值就近排列，无需上下滚动。底部齿轮打开正常窗口，提供菜单栏自定义、传感器、进程、常规设置、提醒和 AI 用量。设置采用就近标签和分组卡片，菜单栏预览固定在顶部，传感器以双列显示。界面使用 SwiftUI 和 AppKit 原生毛玻璃材质，跟随系统明暗模式及辅助功能设置。
+
+## 使用
+
+双击 `MacPulse.app`。应用常驻顶部菜单栏，不显示 Dock 图标。默认按三组双行显示 **CPU / 内存、上传 / 下载、功耗 / 温度**；点击打开总览，右键可打开设置或退出。
+
+- **总览**：功耗、CPU/GPU 温度与占用率、内存、交换空间、网络上下行、磁盘容量和读写、风扇转速、系统负载与开机时间；CPU / GPU / 神经网络引擎分项功耗；电池电量、健康度与循环次数；CPU 或内存占用最高的 3 个进程（可切换）。
+- **进程页**：CPU 与内存占用最高的各 10 个进程。普通权限只能读取本用户进程，系统进程（如 WindowServer）不列出并注明数量。
+- **提醒页**：系统通知提醒，默认关闭。可选 CPU 温度持续过高、内存压力紧张、磁盘空间不足、低电量未充电、Codex / Claude 剩余额度过低。每项触发后只提醒一次，恢复后重新计时；温度有 5 °C 回差，避免反复提醒。
+- **底部齿轮**：打开正常窗口。“传感器”页分类查看硬件读数，“常规”页调整采样间隔、网络接口、登录启动等。
+- **菜单栏自定义**：指标新增 CPU / GPU 功耗与 Codex / Claude 剩余额度（取最紧张的额度窗口）。支持单行 / 双行、最多 6 组指标、上下行独立选择、自定义标签、启用 / 排序 / 删除、颜色、字号、间距、图标、小数精度、网速单位；提供实时预览与预设，自动保存配置。
+- **固定宽度**：数值区、分组以及整个状态栏项的宽度仅根据配置计算，不测量实时字符串来调整宽度。等宽数字右对齐，网速切换单位时不会移动相邻元素。极端超长值在原位置截断；修改指标、标签、字号或布局时才重新计算宽度。全部隐藏时仍保留图标入口。
+- 面板右上角的图钉可以固定面板；再次点击菜单栏图标或关闭按钮可收起。
+- 总览默认高 780 pt，底部为 AI 用量；屏幕可用高度较小时，底部“AI 用量 / 总览”按钮切换内容，无需滚动；历史曲线保留最近两分钟，启动后逐渐积累。
+- 要在登录时启动，请将应用放在 `~/Applications` 或 `/Applications`，再在设置中打开“登录时启动 MacPulse”。系统要求批准时，前往“系统设置 → 通用 → 登录项”。默认不自动开启。
+
+## AI 用量与自定义额度
+
+总览中的 Codex / Claude 按钮切换对应服务，显示今日、近 7 天、累计 Token 及估算费用和近半年活动热力图。点击小格查看当天读数，右上角详情按钮直接打开“AI 用量”设置。
+
+- **数据来源**：默认优先只读 CC Switch 的用量记录（`~/.cc-switch/cc-switch.db` 中的 `proxy_request_logs` 与 `usage_daily_rollups`，不读取服务商凭据表）。CC Switch 能解析 Codex 压缩为 `.jsonl.zst` 的旧会话，并在清理明细后保留按天汇总，费用按其价格表和服务商倍率计算。未安装 CC Switch 或关闭该选项时，回退到下方的本机日志扫描，并提示有多少个压缩会话无法读取（macOS 不自带 zstd 解码）。
+- **费用估算**：本机日志模式按内置的 API 公开标价（2026-10）估算，区分未缓存输入、缓存写入（5 分钟 1.25 倍、1 小时 2 倍）、缓存读取和输出；不在价格表中的模型显示“无标价”。订阅套餐不按 Token 计费，金额不等同于账单。设置页按模型列出次数、Token 和费用。
+- **多台 Mac 汇总（可选，默认关闭）**：开启后每台 Mac 向“iCloud 云盘/MacPulse”写入一个只含按天 Token 数与估算费用的小文件，不含会话内容、路径或账户信息，并合并其他 Mac 的文件；模型明细只显示本机。
+- **额度倒计时与服务状态**：额度窗口显示“2 小时 13 分后重置”式倒计时，悬停可看具体时间。随额度查询一起读取 status.openai.com / status.claude.com 的公开状态，有故障时在服务名旁显示提示，可在设置中关闭。
+
+- 自定义额度：在“设置 → AI 用量”选择服务，启用“使用自定义额度”，填写总额度、已用额度、单位和周期，点击“保存额度”。剩余 = max(0, 总额度 − 已用额度)。Codex / Claude 独立保存。
+- 单位支持 USD、CNY、Token、次数、百分比。自定义额度是手动台账，不会按本地 Token 自动扣款；可选择不重置，或在本机时区每日零点、周一零点、每月 1 日将已用归零。“已用归零”立即保存。
+- Codex：读取本机 `.codex/sessions` 和归档日志，按 response ID 去重；旧日志按累计值差分。缓存输入已包含在总 Token 内，不重复累加。
+- Claude：读取本机 `.claude/projects`，按 assistant message ID 合并流式和重复记录；累计输入、缓存读取、缓存创建、输出 Token。没有本地记录的日期显示空格。
+- 本机统计不包含已删除记录、其他设备和未写入这些目录的会话，也不等同于账单金额。文件扫描每分钟一次，未变化的文件复用内存缓存；仍在写入的会话文件只读取新增行（校验已读末尾，被改写的文件重新解析）。
+- 自动额度：Sub2API 从当前 Codex 配置及相同服务地址的 CC Switch 当前凭据读取 `/v1/usage`；官方 Codex 支持已有 `auth.json` OAuth 登录；Claude 使用标准 Claude Code OAuth 凭据（连接按钮可请求钥匙串访问）。桌面账户信息本身不等于可读取的 Claude Code 凭据。
+- 额度过期、权限不足、服务拒绝或缺少登录时显示原因，不把未知显示为 0。保留的旧值会标记“旧数据”。提供商返回的账户额度与自定义台账始终明确区分。
+
+接口依据：[OpenAI Codex 账户额度文档](https://learn.chatgpt.com/docs/app-server)、[Claude 状态栏额度字段](https://code.claude.com/docs/en/statusline)、[Sub2API 官方实现](https://github.com/Wei-Shaw/sub2api/blob/main/backend/internal/handler/gateway_handler.go)。Claude OAuth 查询方式参考 [CodexBar 的 Claude 实现说明](https://github.com/steipete/CodexBar/blob/main/docs/claude.md)，该接口可能随后续服务更新而变化。
+
+## 数据口径
+
+| 指标 | 来源与含义 |
+| --- | --- |
+| 系统功耗 | 优先读取 AppleSMC `PSTR`，单位 W。不是外接功率计测得的插座功率，也不是 CPU 单独功耗。不可用时尝试 IORegistry 的系统输入功率，并标明来源。 |
+| 芯片分项功耗 | macOS 27 上 IOReport “Energy Model” 计数器在无私有授权时不再更新，改为读取 AppleCLPC 的 CPU / GPU / 神经网络引擎累计能耗（nJ），按两次读数差值除以时间得到平均功率。各芯片的计数器 ID 参照 [macmon](https://github.com/vladkens/macmon)（MIT），只在 macOS 27 和已知芯片上启用，否则显示 —。分项已包含在系统功耗中。 |
+| 进程 | `proc_pid_rusage` 的 CPU 时间差（Mach 时基换算）与物理占用（与活动监视器“内存”列口径一致）。CPU 为占单个核心的百分比。仅在面板或设置窗口可见时采集。 |
+| 电池健康 | AppleSmartBattery 的标称满充容量 ÷ 设计容量（mAh），以及循环次数与设计循环次数。读数会随温度和校准小幅波动。 |
+| 温度 | AppleSMC 可读取的传感器。CPU/GPU 摘要取对应温度组的最高值；具体值可在传感器页检查。 |
+| 本次运行 Wh | 对本次运行期间的可用功率采样做梯形积分。睡眠、退出和缺失数据期间不计入，属于采样估计值。 |
+| CPU | Mach 各核心 CPU tick 的差值，汇总为 0–100%，展示用户、系统占比与各逻辑核心。 |
+| GPU | 驱动 `IOAccelerator` 的 `Device Utilization %`；不可读取时显示 —。 |
+| 内存 | 从 Mach VM 页面统计估算已用物理内存，排除可清除页面与文件缓存，包含压缩内存；可能与活动监视器的瞬时读数略有差异。 |
+| 网络 | Wi-Fi / 以太网 `en*` 物理接口，默认合计，也可单独选择。通过系统自带 netstat 读取完整 64 位计数，按单调时钟差值计算速率；排除 VPN、回环、AirDrop 与桥接口，避免重复累计。普通应用在当前系统读取 NET_RT_IFLIST2 仍会得到截断计数，因此不能仅依据其 64 位字段声明判断精度。系统工具失败时退回原生计数并保护重置；数据源切换时重置基线。 |
+| 磁盘 | 容量为用户主目录所在卷；读写速率为所有可读取的块存储驱动合计，可能包括外接磁盘和已挂载磁盘映像。 |
+| 单位 | KB/MB/GB 使用 1024 进位；总览网速为字节/秒。菜单栏也可切换为比特/秒（b/s，1000 进位）。 |
+
+无法读取的核心传感器数据以 `—` 显示，不伪造数值。睡眠时暂停采样，唤醒后重置差分基线；网络接口重连与计数器回退不会产生负数或巨大速率峰值。
+
+AppleSMC 和 GPU 驱动统计不是稳定的公开 API。此版本针对当前这台 Apple Silicon Mac 验证；其他机型或后续 macOS 更新可能需要适配。应用仅读取传感器，不写入 SMC、不调节风扇、不安装内核扩展或提权服务。
+
+硬件采样和会话用量在本机处理，不上传会话内容或硬件数据，不持续写入日志。账户额度查询每 5 分钟通过 HTTPS 访问已配置服务商或对应官方账户服务，同时（可关闭）读取两家公开状态页，不附带任何凭据或本机数据；检测更新每天访问一次 api.github.com（可关闭）；只有开启“多台 Mac 汇总”后才会向 iCloud 云盘写入按天汇总；登录凭据仅在内存使用，不写入本项目，也不跟随重定向。设置使用标准 UserDefaults 保存；只有主动点击“复制诊断信息”才写入剪贴板。
+
+## 源码与构建
+
+需要 Apple Silicon Mac、macOS 14 或更高版本，以及 Xcode Command Line Tools。当前已在 Swift 6.4 工具链验证。没有第三方依赖；使用 SwiftUI、AppKit、Mach、IOKit、IOReport、UserNotifications 和 ServiceManagement。网络统计通过 posix_spawn 直接运行系统自带 /usr/sbin/netstat，不经过 shell、不需要 sudo。
+
+### 资源占用（1.5 版，M2 Pro 实测）
+
+| 项目 | 1.4 | 1.5 |
+| --- | --- | --- |
+| 单次采样（面板关闭） | 约 107 ms | 约 12 ms |
+| 单次采样（面板打开，含进程） | 约 107 ms | 约 40 ms |
+| 启动网络计数 netstat | 约 74 ms（Foundation Process） | 约 4.5 ms（posix_spawn） |
+| AI 日志首次扫描（177 MB Claude 日志） | 4.3 s，峰值内存约 200 MB | 0.66 s，峰值内存约 28 MB |
+
+面板和设置窗口都关闭时不再触发 SwiftUI 刷新，温度与分项功耗每 3 秒读取一次，菜单栏只在显示内容变化时重绘；屏幕休眠时采样降到 5 秒一次。
+
+获取源码并编译安装：
+
+```bash
+git clone https://github.com/liiuuumemory/MacPulse.git
+cd MacPulse
+bash build.sh
+```
+
+已有源码时，在项目目录直接运行：
+
+```bash
+bash build.sh
+```
+
+默认安装到 `~/Applications/MacPulse.app`，避免将可执行应用放在文件同步服务管理的文档目录；也可指定输出目录：
+
+```bash
+bash build.sh /path/to/output
+```
+
+编译缓存默认存放在临时目录，可通过 `MACPULSE_BUILD_DIR` 环境变量指定。C 与 Swift 均明确编译为 arm64。构建脚本会清除生成应用的附加属性，并做本地 ad-hoc 签名及签名验证；复制到目标目录后再次清理、签名和验证，防止文件同步服务在复制时附加 Finder 元数据导致产物不可用。构建产物用于本机运行，未做 Apple 公证；向其他 Mac 分发时建议使用 Developer ID 签名并公证。
+
+```bash
+"$HOME/Applications/MacPulse.app/Contents/MacOS/MacPulse" --test
+"$HOME/Applications/MacPulse.app/Contents/MacOS/MacPulse" --diagnose
+```
+
+`--test` 检查不同网速和单位下的单行 / 双行固定宽度、数值是否容纳于预留区域、配置序列化、全空配置入口，以及网络计数、功耗积分、历史清理、AI 用量去重与缓存、增量续读、费用估算、CC Switch 记录合并、iCloud 汇总合并、提醒的持续 / 锁存 / 回差 / 冷却、自定义额度保存和周期重置、额度响应解析与未知/零值区分。自检不会修改真实设置。`--diagnose` 采集真实数据并输出 JSON，包括面板打开与关闭两种情况下的单次采样耗时、分项功耗、电池健康和 CPU 最高的进程，不需要 sudo。不要在限制硬件访问的执行沙箱中将不可用误认为传感器不存在。
+
+可使用 `--snapshot /absolute/path.png` 渲染总览，附加 `--snapshot-tab menu` / `settings` / `sensors` / `processes` / `alerts` / `ai` 渲染设置窗口，`--snapshot-tab bar` 渲染实际菜单栏。附加 `--dark` 检查深色模式，`--compact` 检查 480 pt 高的紧凑总览。离屏预览使用中性背景，实际毛玻璃由系统合成；这不是桌面截屏。`--settings` 可直接打开正常设置窗口。
+
+## 检测更新
+
+“设置 → 常规 → 工具与关于”可手动检查更新，默认每天自动检查一次（可关闭）。检查只读取 [GitHub Releases](https://github.com/liiuuumemory/MacPulse/releases) 的最新版本号和发布说明，不发送本机数据，不会自动下载或安装。发现新版本时，面板底部显示“新版本”按钮。
+
+`build.sh` 会把源码所在目录写入生成应用的 Info.plist（只存在于本机构建产物中）。如果该目录是 `git clone` 得到的仓库，设置页提供“复制更新命令”，粘贴到终端运行即可：
+
+```bash
+git pull && bash build.sh
+```
+
+运行后重新打开 MacPulse。
+
+## 文件结构
+
+- `Source/Metrics.swift`：CPU、内存、网络、磁盘、GPU、功耗和传感器采集。
+- `Source/Sensors.c` / `Sensors.h`：只读 SMC 协议、64 位网络计数器、netstat 调用及 AppleCLPC 分项能耗。
+- `Source/Monitor.swift`：后台定时采样、历史数据、设置、睡眠恢复。
+- `Source/Panel.swift`：300 pt 毛玻璃总览面板。
+- `Source/MenuBar.swift`：配置、固定宽度布局、文字绘制和菜单栏编辑器。
+- `Source/Preferences.swift`：正常设置窗口、传感器与常规设置。
+- `Source/AIUsage.swift`：本机会话 Token 去重统计、增量续读、费用估算、CC Switch 记录读取与自定义额度。
+- `Source/UsageSync.swift`：可选的 iCloud 云盘多设备按天汇总。
+- `Source/Alerts.swift`：提醒规则与系统通知。
+- `Source/Updater.swift`：GitHub Releases 检测更新。
+- `Source/QuotaClient.swift`：只读账户额度查询，支持 Codex、Claude OAuth 和 Sub2API。
+- `Source/AIUsageViews.swift`：服务切换、热力图、额度和自定义配置。
+- `Source/AIUsageTests.swift`：独立样本测试，不修改真实账户额度。
+- `Source/main.swift`：菜单栏、弹出面板、自检与渲染入口。
+- `build.sh` / `Info.plist` / `AppIcon.icns`：可复现构建所需文件。
+
+芯片分项功耗使用的 AppleCLPC 计数器 ID 与通道描述格式来自 [macmon](https://github.com/vladkens/macmon)（Copyright (c) 2024 vladkens，MIT License）。传感器键名可参照 [Stats 项目硬件键名资料](https://github.com/exelban/stats/blob/master/Modules/Sensors/values.swift)；本工具的采集器和界面独立实现。系统接口定义以本机 macOS SDK 为准。
+
+## 卸载
+
+先在设置中关闭“登录时启动”，再通过右键菜单退出，最后移除 `MacPulse.app`。没有后台提权服务需要清理。
+
+菜单栏各组统一采用 CPU 使用率组的宽度；网速以 999KB/s、1.2MB/s 等紧凑格式显示。长标签会省略，悬停可查看完整指标读数。

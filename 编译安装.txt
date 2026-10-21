@@ -1,0 +1,59 @@
+MacPulse 1.5 源码编译安装 — Apple Silicon
+
+要求：M 系列芯片 Mac，macOS 14 或更高版本。
+无需第三方依赖，也无需购买 Apple 开发者账号。
+
+1. 安装 Apple 命令行开发工具
+
+在“终端”运行：
+
+xcode-select --install
+
+如果提示已安装，可直接继续；否则等待安装完成。
+
+2. 获取源码
+
+方式一（推荐，便于以后更新）：
+
+git clone https://github.com/liiuuumemory/MacPulse.git
+cd MacPulse
+
+以后有新版本时，在这个文件夹运行 git pull && bash build.sh 即可更新。
+
+方式二：下载 Release 中的源码压缩包并解压，然后进入解压后的源码文件夹：
+
+在终端输入 cd 和一个空格，将解压得到的 MacPulse 源码文件夹拖入终端，再按回车。
+确认此文件夹内有 build.sh、Info.plist、Source 和 AppIcon.icns。
+
+3. 编译、安装并启动
+
+依次执行以下三行：
+
+mkdir -p "$HOME/Applications"
+bash build.sh "$HOME/Applications"
+open "$HOME/Applications/MacPulse.app"
+
+程序安装到你个人目录下的 Applications 文件夹。
+应用常驻顶部菜单栏，不显示 Dock 图标；点击状态数字打开面板，底部齿轮打开设置。
+编译脚本会在这台 Mac 上生成 arm64 程序并进行本地 ad-hoc 签名和签名验证。
+这不是 Apple Developer ID 签名或公证。
+构建不需要下载第三方库，也不需要配置 API 密钥。
+
+可选：运行内置自检
+
+"$HOME/Applications/MacPulse.app/Contents/MacOS/MacPulse" --test
+
+关于新电脑的数据
+
+本源码包不含任何账户凭据、使用日志或个人设置。
+AI 使用统计读取新电脑的本地会话记录；自动账户额度需要那台电脑已有的登录与服务配置。
+自定义额度和菜单栏偏好在新电脑上重新设置。
+不同机型可读取的功耗、温度与风扇传感器可能不同，缺失指标显示 —。
+
+文件说明
+
+Source/：全部 Swift 与 C 源码，含内置自检。
+build.sh：编译、打包和本地签名脚本。
+Info.plist：应用元数据。
+AppIcon.icns：应用图标。
+README.md：功能说明、数据来源与实现细节。
