@@ -8,6 +8,7 @@ struct HistoryPoint: Identifiable {
     let date: Date
     let cpu: Double?
     let gpu: Double?
+    let memory: Double?
     let watts: Double?
     let temperature: Double?
     let download: Double
@@ -22,6 +23,21 @@ final class Monitor: ObservableObject {
     private(set) var sample = Sample()
     private(set) var history: [HistoryPoint] = []
     private(set) var energyWh = 0.0
+    /// Wireless accessory batteries; a sleeping device keeps its last reading.
+    private(set) var peripherals: [PeripheralBattery] = []
+    /// Ten-minute battery readings per accessory for the last eight days; numbers only, kept on this Mac.
+    private(set) var batteryHistory: [String: [BatteryPoint]] = {
+        guard let data = UserDefaults.standard.data(forKey: "peripherals.history.v1"),
+              let stored = try? JSONDecoder().decode([String: [BatteryPoint]].self, from: data) else { return [:] }
+        return stored
+    }()
+    private var peripheralTimer: DispatchSourceTimer?
+    private var peripheralsReadAt: Date?
+    private var peripheralQueue: DispatchQueue { DeviceIO.queue }
+    /// Mouse settings for the settings window; shares the device queue with battery polling.
+    let mice = MouseCenter()
+    /// Optional fan control; does nothing until the user turns it on.
+    let fan = FanController()
     @Published var chip = "正在读取硬件…"
     @Published var model = ""
     @Published var interval: Double {
@@ -30,10 +46,20 @@ final class Monitor: ObservableObject {
     @Published var menuConfiguration: MenuConfiguration {
         didSet {
             if let data = try? JSONEncoder().encode(menuConfiguration.sanitized()) {
-                UserDefaults.standard.set(data, forKey: "menuConfiguration.v1")
+                // 1.7 widgets live under v2; v1 stays readable by older builds.
+                UserDefaults.standard.set(data, forKey: "menuConfiguration.v2")
             }
             onChange?()
         }
+    }
+    @Published var menuPresets: [MenuLayoutPreset] {
+        didSet {
+            if let data = try? JSONEncoder().encode(menuPresets) { UserDefaults.standard.set(data, forKey: "menuPresets.v1") }
+        }
+    }
+    /// The preset applied last (a built-in id or a saved preset's UUID), so later edits can be saved back to it.
+    @Published var menuPresetSource: String? {
+        didSet { UserDefaults.standard.set(menuPresetSource, forKey: "menuPresets.source") }
     }
     @Published var selectedInterface: String {
         didSet { UserDefaults.standard.set(selectedInterface, forKey: "interface"); history.removeAll() }
@@ -60,12 +86,15 @@ final class Monitor: ObservableObject {
         updater = UpdateChecker(live: start)
         let saved = UserDefaults.standard.double(forKey: "interval")
         interval = [0.5, 1, 2, 5].contains(saved) ? saved : 1
-        if let data = UserDefaults.standard.data(forKey: "menuConfiguration.v1"),
+        if let data = UserDefaults.standard.data(forKey: "menuConfiguration.v2") ?? UserDefaults.standard.data(forKey: "menuConfiguration.v1"),
            let stored = try? JSONDecoder().decode(MenuConfiguration.self, from: data) {
             menuConfiguration = stored.sanitized()
         } else {
             menuConfiguration = .reference
         }
+        let presets = UserDefaults.standard.data(forKey: "menuPresets.v1").flatMap { try? JSONDecoder().decode([MenuLayoutPreset].self, from: $0) } ?? []
+        menuPresets = presets.prefix(MenuLayoutPreset.maxCount).map { var p = $0; p.configuration = p.configuration.sanitized(); return p }
+        menuPresetSource = UserDefaults.standard.string(forKey: "menuPresets.source")
         selectedInterface = UserDefaults.standard.string(forKey: "interface") ?? "auto"
         if start {
             restart()
@@ -84,11 +113,56 @@ final class Monitor: ObservableObject {
     func stop() {
         generation &+= 1
         timer?.cancel(); timer = nil
+        peripheralTimer?.cancel(); peripheralTimer = nil
         lastEnergyDate = nil; lastWatts = nil
     }
     /// Panels and windows register while on screen; hidden ones cost no SwiftUI work.
+    /// Saved presets first, then the built-in ones.
+    var allMenuPresets: [(id: String, name: String, configuration: MenuConfiguration, builtIn: Bool)] {
+        menuPresets.map { ($0.id.uuidString, $0.name, $0.configuration, false) } + MenuConfiguration.presets.map { ($0.id, $0.name, $0.value, true) }
+    }
+    /// The preset the menu bar shows right now; the one applied last wins over an identical twin.
+    var currentMenuPresetID: String? {
+        let all = allMenuPresets
+        if let source = menuPresetSource, all.contains(where: { $0.id == source && $0.configuration.matches(menuConfiguration) }) { return source }
+        return all.first { $0.configuration.matches(menuConfiguration) }?.id
+    }
+    func applyMenuPreset(_ id: String) {
+        guard let preset = allMenuPresets.first(where: { $0.id == id }) else { return }
+        menuPresetSource = id
+        menuConfiguration = preset.configuration
+    }
+    /// Saves `configuration`, or the current layout (which then counts as applied from the new preset).
+    @discardableResult func saveMenuPreset(named name: String, configuration: MenuConfiguration? = nil) -> MenuLayoutPreset? {
+        guard menuPresets.count < MenuLayoutPreset.maxCount else { return nil }
+        let preset = MenuLayoutPreset(name: MenuLayoutPreset.cleanName(name, existing: menuPresets), configuration: (configuration ?? menuConfiguration).sanitized())
+        menuPresets.append(preset)
+        if configuration == nil { menuPresetSource = preset.id.uuidString }
+        return preset
+    }
+    func updateMenuPreset(_ id: UUID) {
+        guard let index = menuPresets.firstIndex(where: { $0.id == id }) else { return }
+        menuPresets[index].configuration = menuConfiguration.sanitized()
+        menuPresetSource = id.uuidString
+    }
+    func renameMenuPreset(_ id: UUID, to name: String) {
+        guard let index = menuPresets.firstIndex(where: { $0.id == id }) else { return }
+        let others = menuPresets.filter { $0.id != id }
+        menuPresets[index].name = MenuLayoutPreset.cleanName(name, existing: others)
+    }
+    func moveMenuPreset(_ id: UUID, by offset: Int) {
+        guard let index = menuPresets.firstIndex(where: { $0.id == id }), menuPresets.indices.contains(index + offset) else { return }
+        menuPresets.swapAt(index, index + offset)
+    }
+    func deleteMenuPreset(_ id: UUID) {
+        menuPresets.removeAll { $0.id == id }
+        if menuPresetSource == id.uuidString { menuPresetSource = nil }
+    }
+
     func setVisible(_ id: String, _ visible: Bool) {
         if visible { objectWillChange.send(); viewers.insert(id) } else { viewers.remove(id) }
+        // Opening a view refreshes accessory batteries if the last read is older than 15 seconds.
+        if visible, timer != nil, peripheralsReadAt.map({ Date().timeIntervalSince($0) > 15 }) ?? true { readPeripherals() }
         let detailed = !viewers.isEmpty
         queue.async { [weak self] in self?.detailed = detailed }
     }
@@ -116,8 +190,53 @@ final class Monitor: ObservableObject {
             }
         }
         timer = source; source.resume()
+        // Accessory batteries change slowly; one query a minute is enough.
+        let peripheralSource = DispatchSource.makeTimerSource(queue: peripheralQueue)
+        peripheralSource.schedule(deadline: .now() + 1, repeating: 60, leeway: .seconds(10))
+        peripheralSource.setEventHandler { [weak self] in self?.readPeripheralsNow(version: version) }
+        peripheralTimer = peripheralSource; peripheralSource.resume()
     }
+    private func readPeripherals() {
+        let version = generation
+        peripheralQueue.async { [weak self] in self?.readPeripheralsNow(version: version) }
+    }
+    private func readPeripheralsNow(version: UInt64) {
+        let fresh = PeripheralReader.read()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.generation == version else { return }
+            self.peripheralsReadAt = Date()
+            self.mergePeripherals(fresh)
+        }
+    }
+    func mergePeripherals(_ fresh: [PeripheralBattery]) {
+        var merged = fresh
+        // Keep a sleeping device's last reading for up to a day.
+        for old in peripherals where !fresh.contains(where: { $0.key == old.key }) && Date().timeIntervalSince(old.updated) < 86_400 {
+            merged.append(old)
+        }
+        merged.sort { $0.name < $1.name }
+        var history = batteryHistory
+        for reading in fresh { history[reading.key] = BatteryHistory.append(reading, to: history[reading.key] ?? []) }
+        if history != batteryHistory {
+            batteryHistory = history
+            if let data = try? JSONEncoder().encode(history) { UserDefaults.standard.set(data, forKey: "peripherals.history.v1") }
+        }
+        guard merged != peripherals else { return }
+        if hasVisibleViews { objectWillChange.send() }
+        peripherals = merged
+        onChange?()
+    }
+    /// `--simulate-fans N` (snapshots only) stands in N fans, so layouts can be checked on any Mac.
+    private static let simulatedFans: [FanReading]? = {
+        let arguments = CommandLine.arguments
+        guard arguments.contains("--snapshot"), let flag = arguments.firstIndex(of: "--simulate-fans"),
+              flag + 1 < arguments.count, let count = Int(arguments[flag + 1]) else { return nil }
+        let fans = [FanReading(rpm: 2410, min: 1200, max: 6000), FanReading(rpm: 2280, min: 1200, max: 5600), FanReading(rpm: 1890, min: 1000, max: 4900)]
+        return Array(fans.prefix(max(0, count)))
+    }()
     func accept(_ value: Sample) {
+        var value = value
+        if let fans = Self.simulatedFans { value.smcAvailable = true; value.fans = fans }
         if hasVisibleViews { objectWillChange.send() }
         if let last = lastEnergyDate, let old = lastWatts, let watts = value.watts {
             let duration = value.date.timeIntervalSince(last)
@@ -126,10 +245,12 @@ final class Monitor: ObservableObject {
         lastEnergyDate = value.date; lastWatts = value.watts
         sample = value
         let net = networkRates
-        history.append(HistoryPoint(date: value.date, cpu: value.cpu, gpu: value.gpu, watts: value.watts, temperature: value.cpuTemp, download: net.0, upload: net.1))
+        history.append(HistoryPoint(date: value.date, cpu: value.cpu, gpu: value.gpu,
+                                    memory: value.memoryValid && value.memoryTotal > 0 ? value.memoryUsed / value.memoryTotal * 100 : nil, watts: value.watts, temperature: value.cpuTemp, download: net.0, upload: net.1))
         history.removeAll { $0.date < value.date.addingTimeInterval(-120) }
         if history.count > 241 { history.removeFirst(history.count - 241) }
         alerts.check(value, usage: aiUsage)
+        fan.evaluate(cpuTemperature: value.cpuTemp)
         onChange?()
     }
     var networks: [NetworkValue] {

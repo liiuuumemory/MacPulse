@@ -9,6 +9,13 @@ struct SensorValue: Identifiable {
     let value: Double
     let kind: String
 }
+/// One fan: its current speed and the min…max range the SMC reports for it.
+struct FanReading: Equatable {
+    let rpm: Double
+    let min: Double
+    let max: Double
+    var fraction: Double { max > min ? Swift.min(1, Swift.max(0, (rpm - min) / (max - min))) : 0 }
+}
 struct NetworkValue: Identifiable {
     var id: String { name }
     let name: String
@@ -65,6 +72,8 @@ struct Sample {
     var thermal = "正常"
     var uptime = ProcessInfo.processInfo.systemUptime
     var smcAvailable = false
+    /// Every fan the SMC reports, in its own order; empty on fanless Macs.
+    var fans: [FanReading] = []
     var sensorsComplete = true
 }
 
@@ -120,6 +129,8 @@ final class MetricsCollector {
     private var sensorKeys: [(key: String, name: String)] = []
     private var smcInfo: [String: (type: UInt32, size: UInt32)] = [:]
     private var summaryTemperatures: (time: TimeInterval, values: [SensorValue])?
+    /// Fan min/max never change while running; read them once per fan.
+    private var fanRanges: [Int: (min: Double, max: Double)] = [:]
     private var previousCPU: [UInt32]?
     private var previousNetwork: [String: NetworkValue] = [:]
     private var previousDisk: [UInt64: (UInt64, UInt64)] = [:]
@@ -361,6 +372,9 @@ final class MetricsCollector {
         for i in 0..<fans {
             if let rpm = readSMC("F\(i)Ac"), rpm >= 0, rpm < 20000 {
                 s.sensors.append(SensorValue(key: "F\(i)Ac", name: "风扇 \(i + 1)", value: rpm, kind: "RPM"))
+                if fanRanges[i] == nil, let low = readSMC("F\(i)Mn"), let high = readSMC("F\(i)Mx"), high > low { fanRanges[i] = (low, high) }
+                let range = fanRanges[i] ?? (0, max(rpm, 1))
+                s.fans.append(FanReading(rpm: rpm, min: range.min, max: range.max))
             }
         }
     }

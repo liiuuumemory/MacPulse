@@ -158,6 +158,19 @@ int mp_smc_read(uint32_t c, const char *key, double *value) {
     return mp_smc_info(c, key, &type, &size) && mp_smc_read_info(c, key, type, size, value);
 }
 
+#ifdef MP_SMC_WRITE
+// Write path, compiled only into the root fan helper (build.sh passes -DMP_SMC_WRITE there).
+// The menu bar app links this file without it and stays read-only.
+int mp_smc_write(uint32_t c, const char *key, const uint8_t *bytes, uint32_t size) {
+    uint32_t type, expected;
+    if (!mp_smc_info(c, key, &type, &expected) || expected != size || size > 32) return 0;
+    Packet in = {0}, out;
+    in.key=code(key); in.size=size; in.command=6;
+    memcpy(in.bytes, bytes, size);
+    return call(c, &in, &out);
+}
+#endif
+
 // AppleCLPC energy counters (macOS 27). The IOReport "Energy Model" channels still exist but
 // stop updating without a private entitlement; CLPC keeps aggregate CPU/GPU/ANE energy in nJ
 // under opaque report IDs. The per-driver key table and descriptor layout follow macmon

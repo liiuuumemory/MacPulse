@@ -31,29 +31,28 @@ struct TokenHeatmap: View {
                 Text(selected.map { label($0, values[$0] ?? 0) } ?? "Token 活动 · 近半年")
                 Spacer(minLength: 4)
                 Text(activity.source.replacingOccurrences(of: "本机日志", with: "本机记录"))
-            }.font(.system(size: compact ? 9 : 11)).foregroundStyle(.secondary).lineLimit(1)
-            GeometryReader { geometry in
-                let cell = max(3, (geometry.size.width - 25 * 2) / 26)
-                HStack(alignment: .top, spacing: 2) {
-                    ForEach(0..<26, id: \.self) { week in
-                        VStack(spacing: 2) {
-                            ForEach(0..<7, id: \.self) { day in
-                                let date = allDates[week * 7 + day]
-                                let value = values[date] ?? 0
-                                let future = date > calendar.startOfDay(for: Date())
-                                let opacity = value > 0 ? 0.22 + 0.78 * log1p(value) / log1p(maximum) : 0
-                                Button { selected = date } label: {
-                                    RoundedRectangle(cornerRadius: 2)
-                                        .fill(future ? Color.clear : value > 0 ? color.opacity(opacity) : Color.secondary.opacity(0.09))
-                                        .overlay { if selected == date { RoundedRectangle(cornerRadius: 2).stroke(color, lineWidth: 1) } }
-                                        .frame(width: cell, height: compact ? 6 : 12)
-                                }.buttonStyle(.plain).disabled(future)
-                                    .help(label(date, value)).accessibilityLabel(label(date, value))
-                            }
+            }.font(.system(size: compact ? 10 : 11)).foregroundStyle(.secondary).lineLimit(1)
+            // Square cells: each column takes an equal share of the width and every cell keeps a 1:1 ratio,
+            // so the grid's height follows its width. Wide windows cap the cell at 16 pt.
+            HStack(alignment: .top, spacing: 2) {
+                ForEach(0..<26, id: \.self) { week in
+                    VStack(spacing: 2) {
+                        ForEach(0..<7, id: \.self) { day in
+                            let date = allDates[week * 7 + day]
+                            let value = values[date] ?? 0
+                            let future = date > calendar.startOfDay(for: Date())
+                            let opacity = value > 0 ? 0.22 + 0.78 * log1p(value) / log1p(maximum) : 0
+                            Button { selected = date } label: {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(future ? Color.clear : value > 0 ? color.opacity(opacity) : Color.secondary.opacity(0.09))
+                                    .overlay { if selected == date { RoundedRectangle(cornerRadius: 2).stroke(color, lineWidth: 1) } }
+                                    .aspectRatio(1, contentMode: .fit)
+                            }.buttonStyle(.plain).disabled(future)
+                                .help(label(date, value)).accessibilityLabel(label(date, value))
                         }
-                    }
+                    }.frame(maxWidth: .infinity)
                 }
-            }.frame(height: compact ? 54 : 96)
+            }.frame(maxWidth: 26 * 16 + 25 * 2)
         }
     }
 }
@@ -112,16 +111,16 @@ struct AIQuotaSummary: View {
         VStack(alignment: .leading, spacing: compact ? 4 : 10) {
             HStack(spacing: 6) {
                 Text(custom.enabled ? "自定义剩余额度" : "账户剩余额度")
-                    .font(.system(size: compact ? 11 : 13, weight: .medium))
+                    .font(.system(size: compact ? 12 : 13, weight: .medium))
                 if !custom.enabled && account.stale && account.hasData {
                     Text("旧数据").font(.caption2).foregroundStyle(.orange)
                 }
                 if custom.enabled {
                     Text(UsageFormat.amount(custom.remaining(at: now), unit: custom.unit))
-                        .font(.system(size: compact ? 12 : 18)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+                        .font(.system(size: compact ? 14 : 18, weight: compact ? .semibold : .regular, design: compact ? .rounded : .default)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
                 } else if let balance = account.balance {
                     Text(UsageFormat.amount(balance, unit: account.unit))
-                        .font(.system(size: compact ? 12 : 18)).monospacedDigit().lineLimit(1)
+                        .font(.system(size: compact ? 14 : 18, weight: compact ? .semibold : .regular, design: compact ? .rounded : .default)).monospacedDigit().lineLimit(1)
                 } else if account.unlimited { Text("不限额").font(.callout) }
                 else if !account.hasData { Text("未获取").font(.caption).foregroundStyle(.secondary) }
             }
@@ -131,7 +130,7 @@ struct AIQuotaSummary: View {
                     Text("已用 " + UsageFormat.amount(custom.effectiveUsed(at: now), unit: custom.unit))
                     Spacer(minLength: 0)
                     Text(UsageFormat.countdown(custom.resetAt(at: now), now: now)).help(UsageFormat.reset(custom.resetAt(at: now)))
-                }.font(.system(size: compact ? 9 : 11)).foregroundStyle(.secondary).lineLimit(1)
+                }.font(.system(size: compact ? 10 : 11)).foregroundStyle(.secondary).lineLimit(1)
             } else if !account.windows.isEmpty {
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(Array(account.windows.prefix(compact ? 2 : 4))) { window in
@@ -139,28 +138,28 @@ struct AIQuotaSummary: View {
                             HStack(spacing: 5) {
                                 Text(window.title)
                                 Text(window.remaining(at: now).map { String(format: "剩 %.0f%%", $0) } ?? "待更新").monospacedDigit()
-                            }.font(.system(size: compact ? 10 : 12)).lineLimit(1)
+                            }.font(.system(size: compact ? 11 : 12)).lineLimit(1)
                             if let remaining = window.remaining(at: now) { QuotaBar(fraction: remaining / 100) }
                             Text(window.resetAt == nil ? "重置时间未提供" : UsageFormat.countdown(window.resetAt, now: now))
-                                .font(.system(size: compact ? 9 : 10)).foregroundStyle(.secondary).lineLimit(1)
+                                .font(.system(size: compact ? 10 : 12)).foregroundStyle(.secondary).lineLimit(1)
                                 .help(window.resetAt == nil ? "" : UsageFormat.reset(window.resetAt))
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             } else if !account.hasData {
                 Text(usage.refreshing && account.error == nil ? "正在查询…" : compact ? "可在设置中连接账户或填写自定义额度" : account.error ?? "等待首次查询")
-                    .font(.system(size: compact ? 9 : 12)).foregroundStyle(.secondary)
+                    .font(.system(size: compact ? 10 : 12)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let service, service.degraded {
                 Text("\(provider.title) 服务状态：\(service.label)" + (compact ? "" : "（\(service.description)）"))
-                    .font(.system(size: compact ? 9 : 11)).foregroundStyle(.orange).lineLimit(compact ? 1 : nil)
+                    .font(.system(size: compact ? 10 : 11)).foregroundStyle(.orange).lineLimit(compact ? 1 : nil)
                     .help(service.description)
             }
             if !compact && !custom.enabled {
-                Text(account.account).font(.caption).foregroundStyle(.secondary)
-                if let date = account.fetchedAt { Text("更新于 " + date.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary) }
-                if account.hasData, let error = account.error { Text(error).font(.caption).foregroundStyle(.orange) }
+                Text(account.account).font(.subheadline).foregroundStyle(.secondary)
+                if let date = account.fetchedAt { Text("更新于 " + date.formatted(date: .abbreviated, time: .shortened)).font(.subheadline).foregroundStyle(.secondary) }
+                if account.hasData, let error = account.error { Text(error).font(.subheadline).foregroundStyle(.orange) }
             }
         }.frame(maxWidth: compact ? .infinity : 420, alignment: .leading)
     }
@@ -169,11 +168,13 @@ struct AIQuotaSummary: View {
 struct AIUsagePanel: View {
     @ObservedObject var usage: AIUsageMonitor
     var openSettings: () -> Void
+    /// On its own panel page the heatmap gets full-size cells.
+    var roomy = false
     private var activity: TokenActivity { usage.activity[usage.selected] ?? TokenActivity() }
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: roomy ? 12 : 6) {
             HStack(spacing: 8) {
-                Text("AI 用量").font(.callout.weight(.medium))
+                Text("AI 用量").font(PanelFont.heading)
                 ProviderPicker(usage: usage).controlSize(.small)
                 if let service = usage.status[usage.selected], service.degraded {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
@@ -189,18 +190,32 @@ struct AIUsagePanel: View {
                 statistic("近 7 天", activity.week, cost: activity.weekCost)
                 statistic("累计", activity.total, cost: activity.totalCost)
             }.help("费用按 API 公开标价估算，不等同于账单")
-            TokenHeatmap(activity: activity, color: usage.selected.color)
+            TokenHeatmap(activity: activity, color: usage.selected.color, compact: !roomy)
+            if roomy { DailyCostBars(activity: activity, color: usage.selected.color) }
             if usage.selected.hasQuota { AIQuotaSummary(usage: usage) }
+            if roomy {
+                HStack(spacing: 14) {
+                    Button { usage.refresh() } label: { Label(usage.refreshing ? "刷新中…" : "刷新额度", systemImage: "arrow.clockwise") }
+                        .disabled(usage.refreshing).help("重新读取用量记录和账户额度")
+                    if usage.selected.hasQuota {
+                        Button {
+                            let fallback = URL(string: usage.selected == .codex ? "https://chatgpt.com/codex/settings/usage" : "https://claude.ai/settings/usage")!
+                            NSWorkspace.shared.open(usage.accounts[usage.selected]?.website ?? fallback)
+                        } label: { Label("打开用量网页", systemImage: "safari") }.help("在浏览器中打开账户用量页面")
+                    }
+                    Spacer()
+                }.buttonStyle(.borderless).font(PanelFont.label)
+            }
         }
     }
     private func statistic(_ title: String, _ value: Double, cost: Double) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(title).font(.system(size: 9)).foregroundStyle(.secondary)
-            Text(activity.loaded ? UsageFormat.tokens(value) : "—").font(.system(size: 12)).monospacedDigit()
+            Text(title).font(PanelFont.label).foregroundStyle(.secondary)
+            Text(activity.loaded ? UsageFormat.tokens(value) : "—").font(.system(size: 15, weight: .semibold, design: .rounded)).monospacedDigit()
                 .lineLimit(1).minimumScaleFactor(0.85)
-            Text(activity.loaded ? "≈ " + UsageFormat.amount(cost, unit: "USD") : " ").font(.system(size: 9)).monospacedDigit()
+            Text(activity.loaded ? "≈ " + UsageFormat.amount(cost, unit: "USD") : " ").font(PanelFont.label).monospacedDigit()
                 .foregroundStyle(.secondary).lineLimit(1)
-        }.frame(width: (PanelLayout.width - 48) / 3, alignment: .leading)
+        }.frame(width: (PanelLayout.width - 52) / 3, alignment: .leading)
     }
 }
 
@@ -222,7 +237,7 @@ struct AIUsageSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("AI 用量与额度").font(.title3.weight(.medium))
+                Text("AI 用量与额度").font(.title2.weight(.semibold))
                 Spacer()
                 Button { usage.refresh() } label: { Label(usage.refreshing ? "更新中" : "刷新", systemImage: "arrow.clockwise") }
                     .disabled(usage.refreshing)
@@ -231,6 +246,9 @@ struct AIUsageSettingsView: View {
             if usage.selected.hasQuota {
                 PreferenceCard(title: "额度显示") {
                     AIQuotaSummary(usage: usage, compact: false)
+                    if usage.selected == .claude, usage.accounts[.claude]?.error == QuotaClient.desktopOnlyMessage {
+                        ClaudeConnectSteps()
+                    }
                     HStack(spacing: 8) {
                         if usage.selected == .claude {
                             Button("连接本机 Claude Code") { usage.refresh(allowClaudePrompt: true) }.disabled(usage.refreshing)
@@ -242,9 +260,9 @@ struct AIUsageSettingsView: View {
                         }
                     }
                     Text("自动额度每 5 分钟刷新。读取不到时保留错误提示，已有数据会标记为旧数据。")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.subheadline).foregroundStyle(.secondary)
                     Toggle("同时检查服务状态页（status.openai.com / status.claude.com，不发送任何本机数据）", isOn: $usage.checkStatus)
-                        .toggleStyle(.checkbox).font(.caption)
+                        .toggleStyle(.checkbox).font(.subheadline)
                 }
                 PreferenceCard(title: usage.selected.title + " 自定义额度") {
                     Toggle("使用自定义额度", isOn: $enabled).toggleStyle(.checkbox)
@@ -271,16 +289,16 @@ struct AIUsageSettingsView: View {
                             Text("剩余").foregroundStyle(.secondary)
                             Text(UsageFormat.amount(draft.remaining(), unit: draft.unit)).monospacedDigit()
                         }.font(.callout)
-                    } else { Text("请填写大于 0 的总额度和不小于 0 的已用额度。").font(.caption).foregroundStyle(.orange) }
+                    } else { Text("请填写大于 0 的总额度和不小于 0 的已用额度。").font(.subheadline).foregroundStyle(.orange) }
                     HStack(spacing: 8) {
                         Button("保存额度") {
                             if let draft { usage.save(draft, provider: usage.selected); message = "已保存，菜单栏总览同步更新" }
                         }.disabled(draft == nil)
                         Button("已用归零") { used = "0"; if let draft { usage.save(draft, provider: usage.selected); message = "已用额度已归零" } }.disabled(draft == nil)
-                        if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
+                        if !message.isEmpty { Text(message).font(.subheadline).foregroundStyle(.secondary) }
                     }
                     Text("自定义额度为手动记录，不会自动扣减。到所选周期时，仅将已用额度归零；周期按这台 Mac 的时区计算。关闭后显示自动查询结果。")
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 PreferenceCard(title: usage.selected.title) {
@@ -289,7 +307,7 @@ struct AIUsageSettingsView: View {
                 }
             }
             DisclosureGroup("用量明细与数据来源", isExpanded: $detailsExpanded) { activityDetails.padding(.top, 10) }
-        }.controlSize(.small)
+        }
             .onAppear { loadDraft() }
             .onChange(of: usage.selected) { loadDraft() }
     }
@@ -299,12 +317,12 @@ struct AIUsageSettingsView: View {
                 Text(activity.source.hasPrefix("CC Switch")
                      ? "当前来源：CC Switch（~/.cc-switch，只读，仅查询用量表）" + (activity.latest.map { " · 最近记录 " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "")
                      : "当前来源：本机会话日志" + (usage.preferCCSwitch ? "（未找到可读取的 CC Switch 记录）" : ""))
-                    .font(.caption).foregroundStyle(.secondary)
-                if let note = activity.note { Text(note).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
+                    .font(.subheadline).foregroundStyle(.secondary)
+                if let note = activity.note { Text(note).font(.subheadline).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
                 Toggle("通过 iCloud 云盘汇总多台 Mac", isOn: $usage.syncEnabled).toggleStyle(.checkbox)
                 if usage.syncEnabled {
                     Text(usage.syncMessage.isEmpty ? "仅同步按天汇总的 Token 数与估算费用到“iCloud 云盘/MacPulse”，不含会话内容。其他 Mac 开启同一选项后自动合并；模型明细只含本机。" : usage.syncMessage)
-                        .font(.caption).foregroundStyle(usage.syncMessage.isEmpty ? Color.secondary : Color.orange).fixedSize(horizontal: false, vertical: true)
+                        .font(.subheadline).foregroundStyle(usage.syncMessage.isEmpty ? Color.secondary : Color.orange).fixedSize(horizontal: false, vertical: true)
                     ForEach(usage.peers, id: \.id) { peer in
                         let days = peer.providers[usage.selected.rawValue] ?? []
                         HStack(spacing: 10) {
@@ -314,7 +332,7 @@ struct AIUsageSettingsView: View {
                             Text(UsageFormat.tokens(days.reduce(0) { $0 + $1.tokens }) + " Token · ≈ " + UsageFormat.amount(days.reduce(0) { $0 + $1.cost }, unit: "USD"))
                                 .monospacedDigit().foregroundStyle(.secondary)
                             Text("更新于 " + peer.updatedAt.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(.secondary)
-                        }.font(.caption)
+                        }.font(.subheadline)
                     }
                 }
                 HStack(spacing: 20) {
@@ -325,7 +343,7 @@ struct AIUsageSettingsView: View {
                 TokenHeatmap(activity: activity, color: usage.selected.color, compact: false)
                 if !activity.models.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("按模型").font(.callout.weight(.medium))
+                        Text("按模型").font(.headline)
                         ForEach(activity.models) { model in
                             HStack(spacing: 10) {
                                 Text(model.model).font(.system(.callout, design: .monospaced)).lineLimit(1).truncationMode(.middle)
@@ -340,15 +358,15 @@ struct AIUsageSettingsView: View {
                 Text(activity.source.hasPrefix("CC Switch")
                      ? "Token 与费用取自 CC Switch 的去重记录和价格表（含已压缩会话与历史汇总）。订阅套餐不按 Token 计费，金额不等同于账单；未定价的模型显示“无标价”。"
                      : "包含输入、输出和缓存 Token；仅统计此 Mac 留存的会话记录。费用按 \(ModelPricing.updated) 的 API 公开标价估算，区分缓存读写价格；订阅套餐不按 Token 计费，金额不等同于账单。未列入价格表的模型显示“无标价”。")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                if let error = activity.error { Text(error).font(.caption).foregroundStyle(.orange) }
+                    .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if let error = activity.error { Text(error).font(.subheadline).foregroundStyle(.orange) }
             }
     }
     private func field(_ title: String, _ value: Double, cost: Double) -> some View {
         PreferenceField(title: title) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(activity.loaded ? UsageFormat.tokens(value) : "—").font(.title3).monospacedDigit()
-                Text(activity.loaded ? "≈ " + UsageFormat.amount(cost, unit: "USD") : " ").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                Text(activity.loaded ? "≈ " + UsageFormat.amount(cost, unit: "USD") : " ").font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
             }
         }
     }
@@ -356,5 +374,76 @@ struct AIUsageSettingsView: View {
         let value = usage.budget(usage.selected)
         enabled = value.enabled; total = String(format: "%.12g", value.total)
         used = String(format: "%.12g", value.effectiveUsed()); unit = value.unit; period = value.period; message = ""
+    }
+}
+
+/// Estimated cost per day for the last 14 days; hovering a bar shows that day.
+struct DailyCostBars: View {
+    let activity: TokenActivity
+    let color: Color
+    @AIViewState private var hovered: Date?
+    private static let dayFormatter: DateFormatter = { let f = DateFormatter(); f.dateFormat = "M/d"; return f }()
+    var body: some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let dates = (0..<14).map { calendar.date(byAdding: .day, value: $0 - 13, to: today)! }
+        let costs = Dictionary(activity.days.map { ($0.date, $0.cost) }, uniquingKeysWith: +)
+        let values = dates.map { costs[$0] ?? 0 }
+        let top = max(0.01, values.max() ?? 0)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                if let hovered, let index = dates.firstIndex(of: hovered) {
+                    Text(Self.dayFormatter.string(from: hovered) + " · ≈ " + UsageFormat.amount(values[index], unit: "USD"))
+                } else {
+                    Text("近 14 天费用 · 合计 ≈ " + UsageFormat.amount(values.reduce(0, +), unit: "USD"))
+                }
+                Spacer()
+                Text("峰值 ≈ " + UsageFormat.amount(top, unit: "USD"))
+            }.font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+            HStack(alignment: .bottom, spacing: 3) {
+                ForEach(Array(dates.enumerated()), id: \.offset) { index, date in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(color.opacity(hovered == date ? 1 : date == today ? 0.85 : 0.55))
+                        .frame(height: max(2, 44 * values[index] / top))
+                        .frame(maxWidth: .infinity, maxHeight: 44, alignment: .bottom)
+                        .contentShape(Rectangle())
+                        .onHover { inside in hovered = inside ? date : (hovered == date ? nil : hovered) }
+                        .help(Self.dayFormatter.string(from: date) + "：≈ " + UsageFormat.amount(values[index], unit: "USD"))
+                }
+            }.frame(height: 44)
+        }.accessibilityElement(children: .combine).accessibilityLabel("近 14 天每日费用")
+    }
+}
+
+/// How to get a readable Claude Code login when only the desktop app is signed in.
+struct ClaudeConnectSteps: View {
+    private static let install = "curl -fsSL https://claude.ai/install.sh | bash"
+    @AIViewState private var copied = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("连接 Claude 额度（只需一次）").font(.callout.weight(.medium))
+            step(1, "在“终端”安装命令行版 Claude Code（官方安装命令）：")
+            HStack(spacing: 8) {
+                Text(Self.install).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
+                Button(copied ? "已复制" : "复制") {
+                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(Self.install, forType: .string)
+                    copied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
+                }
+            }
+            step(2, "新开一个终端窗口，运行 claude，按浏览器提示用同一个 Claude Pro 账户登录。")
+            step(3, "回到这里点“连接本机 Claude Code”，在钥匙串提示中选择“允许”。")
+            Link("Claude Code 安装说明", destination: URL(string: "https://code.claude.com/docs/en/setup")!).font(.subheadline)
+        }
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+    private func step(_ number: Int, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("\(number)").font(.subheadline.weight(.semibold)).foregroundStyle(Color.accentColor)
+            Text(text).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

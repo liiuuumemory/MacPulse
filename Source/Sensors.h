@@ -6,6 +6,9 @@ int mp_smc_read(uint32_t connection, const char *key, double *value);
 int mp_smc_info(uint32_t connection, const char *key, uint32_t *type, uint32_t *size);
 int mp_smc_read_info(uint32_t connection, const char *key, uint32_t type, uint32_t size, double *value);
 int mp_smc_key(uint32_t connection, uint32_t index, char *key);
+#ifdef MP_SMC_WRITE
+int mp_smc_write(uint32_t connection, const char *key, const uint8_t *bytes, uint32_t size);
+#endif
 int mp_network_counters(const char *name, uint64_t *received, uint64_t *sent);
 long mp_netstat(char *buffer, size_t capacity);
 int mp_power_open(void);

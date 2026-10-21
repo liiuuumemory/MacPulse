@@ -101,12 +101,18 @@ final class QuotaClient: NSObject, URLSessionTaskDelegate {
         case .failure(let error): result.error = error.text; return result
         }
     }
+    /// Shown when only the Claude desktop app is signed in: its token sits in the app's own encrypted
+    /// storage, which MacPulse does not open. The command-line Claude Code keeps a readable login.
+    static let desktopOnlyMessage = "Claude 桌面版的登录由桌面应用加密保存，无法读取；安装命令行版 Claude Code 并登录一次即可显示额度"
+
     func claude(allowPrompt: Bool) -> AccountQuota {
         var result = AccountQuota(account: "Claude", website: URL(string: "https://claude.ai/settings/usage")!)
-        if let profile = object(home.appendingPathComponent(".claude.json"))?["oauthAccount"] as? [String: Any], let type = profile["organizationType"] as? String {
+        let profile = object(home.appendingPathComponent(".claude.json"))?["oauthAccount"] as? [String: Any]
+        if let type = profile?["organizationType"] as? String {
             result.account = type.replacingOccurrences(of: "claude_", with: "Claude ").capitalized
         }
         var credentials = object(home.appendingPathComponent(".claude/.credentials.json"))
+        var keychainMissing = false
         if credentials == nil {
             let context = LAContext(); context.interactionNotAllowed = !allowPrompt
             var item: CFTypeRef?
@@ -118,9 +124,13 @@ final class QuotaClient: NSObject, URLSessionTaskDelegate {
             let status = SecItemCopyMatching(query as CFDictionary, &item)
             if status == errSecSuccess, let data = item as? Data { credentials = try? JSONSerialization.jsonObject(with: data) as? [String: Any] }
             else if status == errSecInteractionNotAllowed || status == errSecAuthFailed { result.error = "请在 AI 用量设置中连接 Claude 账户"; return result }
+            keychainMissing = status == errSecItemNotFound
         }
         guard let oauth = credentials?["claudeAiOauth"] as? [String: Any], let token = oauth["accessToken"] as? String, !token.isEmpty else {
-            result.error = "需要 Claude Code 登录，或设置自定义额度"; return result
+            // Signed in (the account profile exists) but no command-line login anywhere: the desktop app holds it.
+            let desktop = FileManager.default.fileExists(atPath: home.appendingPathComponent("Library/Application Support/Claude").path)
+            result.error = keychainMissing && profile != nil && desktop ? Self.desktopOnlyMessage : "需要 Claude Code 登录，或设置自定义额度"
+            return result
         }
         result.identity = fingerprint(token, source: "api.anthropic.com")
         if let expires = Self.number(oauth["expiresAt"]), expires / 1000 < Date().timeIntervalSince1970 { result.error = "Claude 登录已过期，请在原应用重新登录"; return result }
