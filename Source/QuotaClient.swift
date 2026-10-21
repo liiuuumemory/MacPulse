@@ -23,7 +23,7 @@ final class QuotaClient: NSObject, URLSessionTaskDelegate {
         guard url.scheme == "https", url.user == nil, url.password == nil else { return .failure(.message("账户查询需要 HTTPS 地址")) }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"; request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("MacPulse/1.5", forHTTPHeaderField: "User-Agent")
+        request.setValue("MacPulse/1.6", forHTTPHeaderField: "User-Agent")
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
         let result = Response(), done = DispatchSemaphore(value: 0)
         let task = session.dataTask(with: request) { data, response, error in
@@ -110,9 +110,11 @@ final class QuotaClient: NSObject, URLSessionTaskDelegate {
         if credentials == nil {
             let context = LAContext(); context.interactionNotAllowed = !allowPrompt
             var item: CFTypeRef?
-            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "Claude Code-credentials",
+            var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "Claude Code-credentials",
                                        kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
                                        kSecUseAuthenticationContext as String: context]
+            // LAContext alone does not silence the login keychain's ACL prompt; this does.
+            if !allowPrompt { query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail }
             let status = SecItemCopyMatching(query as CFDictionary, &item)
             if status == errSecSuccess, let data = item as? Data { credentials = try? JSONSerialization.jsonObject(with: data) as? [String: Any] }
             else if status == errSecInteractionNotAllowed || status == errSecAuthFailed { result.error = "请在 AI 用量设置中连接 Claude 账户"; return result }

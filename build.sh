@@ -13,7 +13,7 @@ swiftc -swift-version 5 -O -target arm64-apple-macos14.0 \
   -import-objc-header "$PROJECT_DIR/Source/Sensors.h" \
   "$PROJECT_DIR/Source/Metrics.swift" "$PROJECT_DIR/Source/Monitor.swift" \
   "$PROJECT_DIR/Source/MenuBar.swift" "$PROJECT_DIR/Source/Preferences.swift" \
-  "$PROJECT_DIR/Source/AIUsageTests.swift" "$PROJECT_DIR/Source/AIUsage.swift" "$PROJECT_DIR/Source/QuotaClient.swift" "$PROJECT_DIR/Source/AIUsageViews.swift" \
+  "$PROJECT_DIR/Source/AIUsageTests.swift" "$PROJECT_DIR/Source/AIUsage.swift" "$PROJECT_DIR/Source/AgentLogs.swift" "$PROJECT_DIR/Source/QuotaClient.swift" "$PROJECT_DIR/Source/AIUsageViews.swift" \
   "$PROJECT_DIR/Source/Alerts.swift" "$PROJECT_DIR/Source/UsageSync.swift" "$PROJECT_DIR/Source/Updater.swift" \
   "$PROJECT_DIR/Source/Panel.swift" "$PROJECT_DIR/Source/main.swift" \
   "$BUILD_DIR/Sensors.o" -framework AppKit -framework SwiftUI -framework IOKit \

@@ -96,7 +96,7 @@ final class AlertCenter: NSObject, ObservableObject, UNUserNotificationCenterDel
             notices.append(Notice(id: "battery", title: "电量低", body: "剩余 \(Format.number(battery, suffix: "%"))，未连接电源。"))
         }
         if c.aiQuota, let usage {
-            for provider in AIProvider.allCases {
+            for provider in AIProvider.quotaProviders {
                 guard let quota = usage.remaining(provider, at: now), !quota.stale else { continue }
                 if engine.evaluate("quota." + provider.rawValue, active: quota.percent < c.aiQuotaLimit, now: now, cooldown: 3600) {
                     notices.append(Notice(id: "quota." + provider.rawValue, title: "\(provider.title) 额度即将用完",

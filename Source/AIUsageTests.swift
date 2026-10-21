@@ -110,6 +110,78 @@ func testAIUsage() {
     precondition(ledger.unpricedTokens == 50 && ledger.source == "CC Switch", "zero-cost models with tokens are unpriced")
     precondition(CCSwitchLedger.activity(.claude, home: root)!.total == 145, "Claude rows add cache reads and writes to input")
     precondition(CCSwitchLedger.activity(.claude, home: codex) == nil, "missing ledger falls back to local logs")
+    precondition(Set(CCSwitchLedger.appTypes(home: root)) == ["codex", "claude"], "apps are discovered from usage rows")
+    // Current CC Switch rows record input semantics; Gemini, like Codex, stores input including cache.
+    let current = root.appendingPathComponent("modern")
+    try! FileManager.default.createDirectory(at: current.appendingPathComponent(".cc-switch"), withIntermediateDirectories: true)
+    precondition(sqlite3_open(current.appendingPathComponent(".cc-switch/cc-switch.db").path, &db) == SQLITE_OK)
+    precondition(sqlite3_exec(db, """
+    CREATE TABLE proxy_request_logs (request_id TEXT PRIMARY KEY, app_type TEXT, model TEXT, input_tokens INTEGER, output_tokens INTEGER,
+      cache_read_tokens INTEGER, cache_creation_tokens INTEGER, input_token_semantics INTEGER, total_cost_usd TEXT, status_code INTEGER, created_at INTEGER);
+    CREATE TABLE usage_daily_rollups (date TEXT, app_type TEXT, model TEXT, request_count INTEGER, success_count INTEGER, input_tokens INTEGER,
+      output_tokens INTEGER, cache_read_tokens INTEGER, cache_creation_tokens INTEGER, input_token_semantics INTEGER, total_cost_usd TEXT);
+    CREATE TABLE model_pricing (model_id TEXT PRIMARY KEY, display_name TEXT, input_cost_per_million TEXT, output_cost_per_million TEXT,
+      cache_read_cost_per_million TEXT, cache_creation_cost_per_million TEXT);
+    INSERT INTO proxy_request_logs VALUES ('a', 'codex', 'gpt-6-astra', 1000, 0, 300, 200, 1, '0', 200, 1792500000);
+    INSERT INTO proxy_request_logs VALUES ('b', 'gemini', 'gemini-2.5-pro', 1000, 100, 600, 0, 0, '0.001', 200, 1792500000);
+    INSERT INTO model_pricing VALUES ('gemini-2.5-pro', 'Gemini 2.5 Pro', '1.25', '10', '0.125', '1.5625');
+    """, nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(db)
+    precondition(CCSwitchLedger.activity(.codex, home: current)!.total == 1000, "total-inclusive rows subtract cache reads and writes once")
+    precondition(CCSwitchLedger.activity(.gemini, home: current)!.total == 1100, "Gemini rows count cache inside input")
+    precondition(CCSwitchLedger.activity(.claude, home: current) == nil, "an app without rows falls back to its local logs")
+    let prices = CCSwitchLedger.prices(home: current)
+    precondition(ModelPricing.price("google/gemini-2.5-pro-preview", extra: prices)?.input == 1.25, "CC Switch prices cover models missing from the built-in table")
+    precondition(ModelPricing.price("claude-opus-5-5", extra: ["claude-opus-5-5": ModelPricing.Price(input: 99, output: 99, cacheRead: 99)])?.input == 4, "built-in prices win")
+
+    // Gemini CLI: chat recordings (.json) and session JSONL; other tmp files are not usage.
+    let geminiChats = root.appendingPathComponent(".gemini/tmp/project-hash/chats")
+    try! FileManager.default.createDirectory(at: geminiChats, withIntermediateDirectories: true)
+    try! JSONSerialization.data(withJSONObject: ["sessionId": "g1", "startTime": timestamp, "lastUpdated": timestamp, "messages": [
+        ["id": "u1", "type": "user", "timestamp": timestamp, "content": "hi"],
+        ["id": "m1", "type": "gemini", "timestamp": timestamp, "model": "gemini-2.5-pro",
+         "tokens": ["input": 1000, "output": 50, "cached": 600, "thoughts": 10, "tool": 0, "total": 1060]]
+    ]], options: .prettyPrinted).write(to: geminiChats.appendingPathComponent("session-1.json"))
+    write([["sessionId": "g2", "kind": "main"],
+           ["id": "m2", "type": "gemini", "timestamp": timestamp, "model": "gemini-2.5-flash", "tokens": ["input": 100, "output": 5, "cached": 0, "total": 105]],
+           ["id": "m2", "type": "gemini", "timestamp": timestamp, "model": "gemini-2.5-flash", "tokens": ["input": 100, "output": 5, "cached": 0, "total": 105]]],
+          geminiChats.appendingPathComponent("session-2.jsonl"))
+    try! JSONSerialization.data(withJSONObject: ["messages": [["id": "x", "model": "gemini-2.5-pro", "tokens": ["input": 999]]]])
+        .write(to: root.appendingPathComponent(".gemini/tmp/project-hash/logs.json"))
+    let gemini = scanner.scan(.gemini, home: root, prices: prices)
+    precondition(gemini.total == 1165 && gemini.requests == 2, "Gemini cached input is not double counted and repeated records count once")
+    // 400 fresh × $1.25 + 600 cached × $0.125 + 60 output (incl. thoughts) × $10; the flash model has no price here.
+    precondition(abs(gemini.totalCost - 1175e-6) < 1e-12 && gemini.unpricedTokens == 105)
+
+    // Qwen Code keeps cache hits outside promptTokenCount.
+    let qwenChats = root.appendingPathComponent(".qwen/projects/p/chats")
+    try! FileManager.default.createDirectory(at: qwenChats, withIntermediateDirectories: true)
+    write([["type": "user", "timestamp": timestamp, "sessionId": "q1"],
+           ["type": "assistant", "model": "qwen3-coder-plus", "timestamp": timestamp, "sessionId": "q1",
+            "usageMetadata": ["promptTokenCount": 100, "candidatesTokenCount": 20, "thoughtsTokenCount": 5, "cachedContentTokenCount": 300]]],
+          qwenChats.appendingPathComponent("a.jsonl"))
+    precondition(scanner.scan(.qwen, home: root).total == 425)
+
+    // OpenCode: legacy per-message JSON plus the 1.2+ SQLite store; the same message counts once.
+    let legacyMessages = root.appendingPathComponent(".local/share/opencode/storage/message/ses_1")
+    try! FileManager.default.createDirectory(at: legacyMessages, withIntermediateDirectories: true)
+    let opencodeMessage: [String: Any] = ["id": "msg_1", "role": "assistant", "modelID": "claude-sonnet-4", "cost": 0.05,
+                                          "tokens": ["input": 10, "output": 5, "reasoning": 2, "cache": ["read": 100, "write": 50]], "time": ["created": 1792500000000]]
+    try! JSONSerialization.data(withJSONObject: opencodeMessage).write(to: legacyMessages.appendingPathComponent("msg_1.json"))
+    precondition(sqlite3_open(root.appendingPathComponent(".local/share/opencode/opencode.db").path, &db) == SQLITE_OK)
+    precondition(sqlite3_exec(db, "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, data TEXT)", nil, nil, nil) == SQLITE_OK)
+    for (id, object) in [("msg_1", opencodeMessage),
+                         ("msg_2", ["role": "assistant", "model": ["id": "gpt-6-astra", "providerID": "openai"], "tokens": ["input": 1000, "output": 100], "time": ["created": 1792500000000]]),
+                         ("msg_3", ["role": "user", "time": ["created": 1792500000000]])] {
+        let json = String(data: try! JSONSerialization.data(withJSONObject: object), encoding: .utf8)!.replacingOccurrences(of: "'", with: "''")
+        precondition(sqlite3_exec(db, "INSERT INTO message VALUES ('\(id)', 'ses_1', '\(json)')", nil, nil, nil) == SQLITE_OK)
+    }
+    sqlite3_close(db)
+    let opencode = scanner.scan(.opencode, home: root)
+    precondition(opencode.total == 1267 && opencode.requests == 2, "OpenCode SQLite and legacy files deduplicate by message ID")
+    precondition(abs(opencode.totalCost - 0.065) < 1e-12, "OpenCode's own cost is used; missing cost falls back to list prices")
+    precondition(AIProvider(rawValue: "grokbuild")?.title == "Grok Build" && AIProvider(rawValue: "") == nil && !AIProvider.gemini.hasQuota)
+
     try! Data([0x28, 0xb5, 0x2f, 0xfd]).write(to: codex.appendingPathComponent("old.jsonl.zst"))
     precondition(scanner.scan(.codex, home: root).note != nil, "compressed sessions are reported, not silently skipped")
     let outage = QuotaClient.serviceStatus(["status": ["indicator": "major", "description": "Partial outage"]])!
@@ -125,5 +197,5 @@ func testAIUsage() {
     let local = TokenActivity(days: [UsageDay(date: calendar.startOfDay(for: before), tokens: 100, cost: 1)], loaded: true)
     let combined = UsageSync.merge(local, peers: peers.compactMap { $0.providers["codex"] })
     precondition(combined.total == 157 && abs(combined.totalCost - 1.5) < 1e-9 && combined.days.count >= 2, "daily totals from other Macs add up")
-    print("PASS: AI usage deduplication, cache invalidation, incremental resume, cost estimation, CC Switch ledger, iCloud merge, quota parsing, missing/zero distinction, custom budget persistence and resets")
+    print("PASS: AI usage deduplication, cache invalidation, incremental resume, cost estimation, CC Switch ledger and app discovery, Gemini / Qwen / OpenCode logs, iCloud merge, quota parsing, missing/zero distinction, custom budget persistence and resets")
 }

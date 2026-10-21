@@ -1,4 +1,4 @@
-MacPulse 1.5 源码编译安装 — Apple Silicon
+MacPulse 1.6 源码编译安装 — Apple Silicon
 
 要求：M 系列芯片 Mac，macOS 14 或更高版本。
 无需第三方依赖，也无需购买 Apple 开发者账号。

@@ -6,10 +6,34 @@ import LocalAuthentication
 import SQLite3
 import CryptoKit
 
-enum AIProvider: String, CaseIterable, Identifiable, Codable {
-    case codex, claude
+/// An AI coding service. Codex and Claude carry account quotas; every other service, whether read
+/// from its own logs or discovered in CC Switch, reports usage and estimated cost only.
+struct AIProvider: RawRepresentable, Hashable, Identifiable, Codable {
+    let rawValue: String
+    init?(rawValue: String) {
+        guard !rawValue.isEmpty else { return nil }
+        self.rawValue = rawValue
+    }
+    private init(_ id: String) { rawValue = id }
     var id: String { rawValue }
-    var title: String { self == .codex ? "Codex" : "Claude" }
+    static let codex = Self("codex"), claude = Self("claude"), gemini = Self("gemini"), qwen = Self("qwen"), opencode = Self("opencode")
+    static let quotaProviders: [Self] = [.codex, .claude]
+    /// Services whose local logs MacPulse reads itself when CC Switch has no rows for them.
+    static let localSources: [Self] = [.codex, .claude, .gemini, .qwen, .opencode]
+    var hasQuota: Bool { Self.quotaProviders.contains(self) }
+    var title: String {
+        switch rawValue {
+        case "codex": return "Codex"
+        case "claude": return "Claude"
+        case "gemini": return "Gemini"
+        case "qwen": return "Qwen"
+        case "opencode": return "OpenCode"
+        case "grokbuild": return "Grok Build"
+        case "agy": return "Antigravity"
+        case "claude-desktop": return "Claude 桌面版"
+        default: return rawValue.prefix(1).uppercased() + rawValue.dropFirst()
+        }
+    }
 }
 
 struct UsageEvent {
@@ -21,12 +45,13 @@ struct UsageEvent {
     var cacheWrite = 0.0 // short-lived cache writes (Claude 5 min, OpenAI)
     var cacheWriteLong = 0.0 // Claude 1 h cache writes
     var model = ""
+    var reportedCost: Double? // the agent's own cost figure (OpenCode), preferred over list prices
     var total: Double { input + output }
     func merged(with other: Self) -> Self {
         Self(id: id, date: min(date, other.date), input: max(input, other.input),
              output: max(output, other.output), cached: max(cached, other.cached),
              cacheWrite: max(cacheWrite, other.cacheWrite), cacheWriteLong: max(cacheWriteLong, other.cacheWriteLong),
-             model: model.isEmpty ? other.model : model)
+             model: model.isEmpty ? other.model : model, reportedCost: reportedCost ?? other.reportedCost)
     }
 }
 struct UsageDay: Identifiable {
@@ -92,12 +117,21 @@ enum ModelPricing {
         ("claude-haiku-4-5", Price(input: 1, output: 5, cacheRead: 0.1)),
         ("gpt-6-astra", Price(input: 10, output: 50, cacheRead: 1))
     ].sorted { $0.prefix.count > $1.prefix.count }
-    static func price(_ model: String) -> Price? {
-        let id = model.lowercased()
-        return table.first { id == $0.prefix || id.hasPrefix($0.prefix + "-") || id.hasPrefix($0.prefix + "@") }?.price
+    /// Built-in prices first, then `extra` (CC Switch's table), matching provider-prefixed and dated IDs.
+    static func price(_ model: String, extra: [String: Price] = [:]) -> Price? {
+        var id = model.lowercased()
+        if let slash = id.lastIndex(of: "/") { id = String(id[id.index(after: slash)...]) } // "google/gemini-…"
+        func matches(_ prefix: String) -> Bool { id == prefix || id.hasPrefix(prefix + "-") || id.hasPrefix(prefix + "@") }
+        if let builtIn = table.first(where: { matches($0.prefix) })?.price { return builtIn }
+        if let exact = extra[id] { return exact }
+        return extra.keys.filter(matches).max { $0.count < $1.count }.flatMap { extra[$0] }
     }
-    static func cost(_ event: UsageEvent) -> Double? {
-        guard let price = price(event.model) else { return nil }
+    static func cost(_ event: UsageEvent, extra: [String: Price] = [:]) -> Double? {
+        cost(event, price: event.reportedCost == nil ? price(event.model, extra: extra) : nil)
+    }
+    static func cost(_ event: UsageEvent, price: Price?) -> Double? {
+        if let reported = event.reportedCost { return reported }
+        guard let price else { return nil }
         let uncached = max(0, event.input - event.cached - event.cacheWrite - event.cacheWriteLong)
         let dollars = uncached * price.input + event.cacheWrite * price.input * 1.25 + event.cacheWriteLong * price.input * 2
             + event.cached * price.cacheRead + event.output * price.output
@@ -218,6 +252,7 @@ final class UsageLogScanner {
         var offset: UInt64 = 0
         var tail = Data() // the last bytes before `offset`, to detect a rewritten file
         var previous = 0.0
+        var index = 0 // records seen, for agents whose lines carry no message ID
         var sessionID: String
         var model = ""
         var turnModels: [String: String] = [:]
@@ -233,6 +268,7 @@ final class UsageLogScanner {
     }
     struct FileCache { var size: Int; var modified: Date; var identity: NSObject?; var state: ParseState; var events: [String: UsageEvent] }
     private var cache: [URL: FileCache] = [:]
+    private var openCodeDatabase: (signature: String, events: [String: UsageEvent])?
     private let fractional: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f }()
     private let plain = ISO8601DateFormatter()
     func date(_ value: Any?) -> Date? {
@@ -243,8 +279,29 @@ final class UsageLogScanner {
         guard let n = (object[key] as? NSNumber)?.doubleValue, n.isFinite, n >= 0 else { return 0 }
         return n
     }
-    func scan(_ provider: AIProvider, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> TokenActivity {
-        let roots = provider == .codex ? [home.appendingPathComponent(".codex/sessions"), home.appendingPathComponent(".codex/archived_sessions")] : [home.appendingPathComponent(".claude/projects")]
+    static func roots(_ provider: AIProvider, home: URL) -> [URL] {
+        let paths: [String]
+        switch provider {
+        case .codex: paths = [".codex/sessions", ".codex/archived_sessions"]
+        case .claude: paths = [".claude/projects"]
+        case .gemini: paths = [".gemini/tmp"]
+        case .qwen: paths = [".qwen/projects", ".qwen/tmp"]
+        case .opencode: paths = [".local/share/opencode/storage/message"] // OpenCode before 1.2; newer versions use SQLite
+        default: paths = []
+        }
+        return paths.map { home.appendingPathComponent($0) }
+    }
+    static func accepts(_ file: URL, provider: AIProvider) -> Bool {
+        switch provider {
+        case .gemini:
+            // Chat recordings only; tmp/ also holds prompt logs and shell history.
+            return ["json", "jsonl"].contains(file.pathExtension) && (file.path.contains("/chats/") || file.lastPathComponent.hasPrefix("session-"))
+        case .opencode: return file.pathExtension == "json"
+        default: return file.pathExtension == "jsonl"
+        }
+    }
+    func scan(_ provider: AIProvider, home: URL = FileManager.default.homeDirectoryForCurrentUser, prices: [String: ModelPricing.Price] = [:]) -> TokenActivity {
+        let roots = Self.roots(provider, home: home)
         let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey, .fileResourceIdentifierKey]
         var merged: [String: UsageEvent] = [:]
         var readFailure = false
@@ -254,15 +311,21 @@ final class UsageLogScanner {
             guard let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles], errorHandler: { _, _ in readFailure = true; return true }) else { readFailure = true; continue }
             for case let file as URL in files {
                 // Codex compresses older sessions to .jsonl.zst; macOS ships no zstd decoder.
-                if file.pathExtension == "zst" { compressed += 1; continue }
-                guard file.pathExtension == "jsonl" else { continue }
+                if provider == .codex && file.pathExtension == "zst" { compressed += 1; continue }
+                guard Self.accepts(file, provider: provider) else { continue }
                 guard let info = try? file.resourceValues(forKeys: Set(keys)), info.isRegularFile == true else { continue }
                 visited.insert(file)
                 let size = info.fileSize ?? 0, modified = info.contentModificationDate ?? .distantPast
                 let identity = info.fileResourceIdentifier as? NSObject
                 let events: [String: UsageEvent]
                 if let saved = cache[file], saved.size == size && saved.modified == modified { events = saved.events }
-                else {
+                else if file.pathExtension == "json" {
+                    // Whole-document formats (Gemini chat recordings, OpenCode messages) are re-read when changed.
+                    do {
+                        events = try parseDocument(file, provider: provider, modified: modified)
+                        cache[file] = FileCache(size: size, modified: modified, identity: identity, state: ParseState(sessionID: file.lastPathComponent), events: events)
+                    } catch { readFailure = true; cache[file] = nil; continue }
+                } else {
                     // Append-only growth of the same file resumes; anything else is parsed afresh.
                     var state = ParseState(sessionID: file.lastPathComponent)
                     if let saved = cache[file], size >= saved.size, UInt64(size) >= saved.state.offset,
@@ -276,14 +339,31 @@ final class UsageLogScanner {
                 for (id, value) in events { merged[id] = merged[id].map { $0.merged(with: value) } ?? value }
             }
         }
-        // Drop obsolete file caches for this provider without touching the other one.
+        // Drop obsolete file caches for this provider without touching the others.
         cache = cache.filter { key, _ in !roots.contains(where: { key.path.hasPrefix($0.path + "/") }) || visited.contains(key) }
+        if provider == .opencode, let signature = OpenCodeStore.signature(home: home) {
+            if openCodeDatabase?.signature != signature {
+                if let events = OpenCodeStore.databaseEvents(home: home) { openCodeDatabase = (signature, events) } else { readFailure = true }
+            }
+            for (id, value) in openCodeDatabase?.events ?? [:] { merged[id] = merged[id].map { $0.merged(with: value) } ?? value }
+        }
+        let summary = Self.summarize(merged.values, prices: prices)
+        return TokenActivity(days: summary.days, models: summary.models,
+                             unpricedTokens: summary.unpriced, requests: merged.count, loaded: true,
+                             error: readFailure ? "部分本地记录无法读取" : nil,
+                             note: compressed > 0 ? "\(compressed) 个已压缩的会话（.zst）无法直接读取；安装 CC Switch 后可完整统计" : nil,
+                             latest: merged.values.map(\.date).max(), updatedAt: Date())
+    }
+    static func summarize<Events: Sequence>(_ events: Events, prices: [String: ModelPricing.Price]) -> (days: [UsageDay], models: [ModelUsage], unpriced: Double) where Events.Element == UsageEvent {
         var days: [Date: UsageDay] = [:]
         var models: [String: ModelUsage] = [:]
+        var priceCache: [String: ModelPricing.Price?] = [:]
         var unpriced = 0.0
-        for event in merged.values {
+        for event in events {
             let day = Calendar.current.startOfDay(for: event.date)
-            let cost = ModelPricing.cost(event)
+            let price: ModelPricing.Price?
+            if let cached = priceCache[event.model] { price = cached } else { price = ModelPricing.price(event.model, extra: prices); priceCache[event.model] = price }
+            let cost = ModelPricing.cost(event, price: price)
             days[day, default: UsageDay(date: day, tokens: 0)].tokens += event.total
             days[day, default: UsageDay(date: day, tokens: 0)].cost += cost ?? 0
             guard event.total > 0 else { continue }
@@ -293,11 +373,7 @@ final class UsageLogScanner {
             if let cost { usage.cost = (usage.cost ?? 0) + cost } else { unpriced += event.total }
             models[name] = usage
         }
-        return TokenActivity(days: days.values.sorted { $0.date < $1.date }, models: models.values.sorted { $0.tokens > $1.tokens },
-                             unpricedTokens: unpriced, requests: merged.count, loaded: true,
-                             error: readFailure ? "部分本地记录无法读取" : nil,
-                             note: compressed > 0 ? "\(compressed) 个已压缩的会话（.zst）无法直接读取；安装 CC Switch 后可完整统计" : nil,
-                             latest: merged.values.map(\.date).max(), updatedAt: Date())
+        return (days.values.sorted { $0.date < $1.date }, models.values.sorted { $0.tokens > $1.tokens }, unpriced)
     }
     func parseFile(_ url: URL, provider: AIProvider) throws -> [String: UsageEvent] {
         var state = ParseState(sessionID: url.lastPathComponent)
@@ -310,7 +386,7 @@ final class UsageLogScanner {
         guard (try? file.seek(toOffset: state.offset - UInt64(state.tail.count))) != nil else { return false }
         return (try? file.read(upToCount: state.tail.count)) ?? Data() == state.tail
     }
-    private static func contains(_ line: Data, _ needle: StaticString) -> Bool {
+    static func contains(_ line: Data, _ needle: StaticString) -> Bool {
         line.withUnsafeBytes { raw in
             raw.count >= needle.utf8CodeUnitCount && memmem(raw.baseAddress, raw.count, needle.utf8Start, needle.utf8CodeUnitCount) != nil
         }
@@ -318,6 +394,7 @@ final class UsageLogScanner {
     func parseFile(_ url: URL, provider: AIProvider, state: inout ParseState) throws {
         let file = try FileHandle(forReadingFrom: url); defer { try? file.close() }
         func consume(_ line: Data, _ state: inout ParseState) {
+            if provider != .codex && provider != .claude { consumeAgentLine(line, provider: provider, state: &state); return }
             // Ignore non-usage records before decoding potentially large message bodies.
             if provider == .codex && !Self.contains(line, "token_usage_record") && !Self.contains(line, "token_count")
                 && !Self.contains(line, "session_meta") && !Self.contains(line, "turn_context") { return }
@@ -394,43 +471,98 @@ final class UsageLogScanner {
     }
 }
 
-/// CC Switch keeps its own deduplicated, priced ledger of Claude Code and Codex usage. It decodes
-/// Codex's compressed sessions and keeps daily rollups after pruning old rows, so it is preferred
-/// when present. Read-only; only the usage tables are queried, never provider credentials.
+/// CC Switch keeps its own deduplicated, priced ledger of AI agent usage (Claude Code, Codex, Gemini,
+/// Grok Build and others). It decodes Codex's compressed sessions and keeps daily rollups after
+/// pruning old rows, so it is preferred for every app it has rows for. Read-only; only the usage
+/// and price tables are queried, never provider credentials.
 enum CCSwitchLedger {
-    static func activity(_ provider: AIProvider, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> TokenActivity? {
+    static func open(home: URL) -> OpaquePointer? {
         let file = home.appendingPathComponent(".cc-switch/cc-switch.db")
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
         var db: OpaquePointer?
         guard sqlite3_open_v2(file.path, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK else { if let db { sqlite3_close(db) }; return nil }
-        defer { sqlite3_close(db) }
         sqlite3_busy_timeout(db, 1000)
-        // OpenAI-style rows already count cache reads inside input_tokens; Anthropic-style rows do not.
-        let tokens = provider == .codex ? "input_tokens + output_tokens" : "input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens"
+        return db
+    }
+    private static func rows(_ db: OpaquePointer?, _ sql: String, bind: String? = nil, _ body: (OpaquePointer?) -> Void) -> Bool {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(statement) }
+        if let bind { sqlite3_bind_text(statement, 1, bind, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self)) }
+        while sqlite3_step(statement) == SQLITE_ROW { body(statement) }
+        return true
+    }
+    private static func text(_ statement: OpaquePointer?, _ column: Int32) -> String {
+        sqlite3_column_text(statement, column).map { String(cString: $0) } ?? ""
+    }
+    private static func hasColumn(_ db: OpaquePointer?, _ table: String, _ column: String) -> Bool {
+        var found = false
+        _ = rows(db, "PRAGMA table_info(\(table))") { if text($0, 1) == column { found = true } }
+        return found
+    }
+    /// Apps with usage rows, e.g. claude, codex, gemini, grokbuild.
+    static func appTypes(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [String] {
+        guard let db = open(home: home) else { return [] }
+        defer { sqlite3_close(db) }
+        var apps: [String] = []
+        _ = rows(db, "SELECT app_type FROM proxy_request_logs UNION SELECT app_type FROM usage_daily_rollups") { statement in
+            let app = text(statement, 0)
+            if !app.isEmpty { apps.append(app) }
+        }
+        return apps
+    }
+    /// CC Switch's per-model price table, used for models missing from the built-in list.
+    static func prices(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [String: ModelPricing.Price] {
+        guard let db = open(home: home) else { return [:] }
+        defer { sqlite3_close(db) }
+        var prices: [String: ModelPricing.Price] = [:]
+        _ = rows(db, "SELECT model_id, CAST(input_cost_per_million AS REAL), CAST(output_cost_per_million AS REAL), CAST(cache_read_cost_per_million AS REAL) FROM model_pricing") { statement in
+            let id = text(statement, 0).lowercased()
+            let values = (1...3).map { max(0, sqlite3_column_double(statement, Int32($0))) }
+            if !id.isEmpty, values[0] > 0 || values[1] > 0 { prices[id] = ModelPricing.Price(input: values[0], output: values[1], cacheRead: values[2]) }
+        }
+        return prices
+    }
+    // Mirrors CC Switch's own normalisation (src-tauri/src/services/sql_helpers.rs, fresh_input_sql and
+    // real_total_tokens_sql): these apps store input including cache, others store fresh input.
+    static let cacheInclusiveApps = ["codex", "gemini", "grokbuild"]
+    static func tokensSQL(semantics: Bool) -> String {
+        let inclusive = cacheInclusiveApps.map { "'\($0)'" }.joined(separator: ", ")
+        let mode = semantics ? "input_token_semantics" : "0"
+        let fresh = """
+        CASE WHEN \(mode) = 2 THEN input_tokens \
+        WHEN app_type IN (\(inclusive)) AND \(mode) = 1 AND input_tokens >= cache_read_tokens + cache_creation_tokens THEN input_tokens - cache_read_tokens - cache_creation_tokens \
+        WHEN app_type IN (\(inclusive)) AND \(mode) = 0 AND input_tokens >= cache_read_tokens THEN input_tokens - cache_read_tokens \
+        ELSE input_tokens END
+        """
+        return "((\(fresh)) + output_tokens + cache_creation_tokens + cache_read_tokens)"
+    }
+    /// nil when CC Switch has no rows for this app, so local logs are used instead.
+    static func activity(_ provider: AIProvider, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> TokenActivity? {
+        guard let db = open(home: home) else { return nil }
+        defer { sqlite3_close(db) }
         let seconds = "CASE WHEN created_at > 100000000000 THEN created_at / 1000 ELSE created_at END"
         let sql = """
         SELECT day, model, SUM(requests), SUM(tokens), SUM(cost), MAX(latest) FROM (
-          SELECT date(\(seconds), 'unixepoch', 'localtime') AS day, model, COUNT(*) AS requests, SUM(\(tokens)) AS tokens,
+          SELECT date(\(seconds), 'unixepoch', 'localtime') AS day, model, COUNT(*) AS requests,
+                 SUM(\(tokensSQL(semantics: hasColumn(db, "proxy_request_logs", "input_token_semantics")))) AS tokens,
                  SUM(CAST(total_cost_usd AS REAL)) AS cost, MAX(\(seconds)) AS latest
             FROM proxy_request_logs WHERE app_type = ?1 AND status_code BETWEEN 200 AND 299 GROUP BY day, model
           UNION ALL
-          SELECT date, model, success_count, \(tokens), CAST(total_cost_usd AS REAL), NULL FROM usage_daily_rollups WHERE app_type = ?1
+          SELECT date, model, success_count, \(tokensSQL(semantics: hasColumn(db, "usage_daily_rollups", "input_token_semantics"))),
+                 CAST(total_cost_usd AS REAL), NULL FROM usage_daily_rollups WHERE app_type = ?1
         ) GROUP BY day, model
         """
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return nil }
-        defer { sqlite3_finalize(statement) }
-        sqlite3_bind_text(statement, 1, provider.rawValue, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
         var days: [Date: UsageDay] = [:], models: [String: ModelUsage] = [:]
         var requests = 0, unpriced = 0.0, latest: TimeInterval = 0
-        while sqlite3_step(statement) == SQLITE_ROW {
-            guard let rawDay = sqlite3_column_text(statement, 0), let day = formatter.date(from: String(cString: rawDay)).map({ Calendar.current.startOfDay(for: $0) }) else { continue }
-            let model = sqlite3_column_text(statement, 1).map { String(cString: $0) } ?? ""
+        let ok = rows(db, sql, bind: provider.rawValue) { statement in
+            guard let day = formatter.date(from: text(statement, 0)).map({ Calendar.current.startOfDay(for: $0) }) else { return }
+            let model = text(statement, 1)
             let count = Int(sqlite3_column_int64(statement, 2))
             let used = max(0, sqlite3_column_double(statement, 3)), cost = max(0, sqlite3_column_double(statement, 4))
             latest = max(latest, sqlite3_column_double(statement, 5))
-            guard used > 0 || count > 0 else { continue }
+            guard used > 0 || count > 0 else { return }
             requests += count
             days[day, default: UsageDay(date: day, tokens: 0)].tokens += used
             days[day, default: UsageDay(date: day, tokens: 0)].cost += cost
@@ -441,7 +573,7 @@ enum CCSwitchLedger {
             if cost > 0 || used == 0 { usage.cost = (usage.cost ?? 0) + cost } else { unpriced += used }
             models[name] = usage
         }
-        for (name, usage) in models where usage.cost == nil && usage.tokens == 0 { models[name]?.cost = 0 }
+        guard ok, requests > 0 || !days.isEmpty else { return nil }
         return TokenActivity(days: days.values.sorted { $0.date < $1.date }, models: models.values.filter { $0.tokens > 0 }.sorted { $0.tokens > $1.tokens },
                              unpricedTokens: unpriced, requests: requests, loaded: true, source: "CC Switch",
                              latest: latest > 0 ? Date(timeIntervalSince1970: latest) : nil, updatedAt: Date())
@@ -453,6 +585,8 @@ final class AIUsageMonitor: ObservableObject {
         didSet { UserDefaults.standard.set(selected.rawValue, forKey: "ai.provider") }
     }
     @Published private(set) var activity: [AIProvider: TokenActivity] = [:]
+    /// Codex and Claude always; any other service once it has usage.
+    @Published private(set) var providers: [AIProvider] = AIProvider.quotaProviders
     @Published private(set) var accounts: [AIProvider: AccountQuota] = [:]
     @Published private(set) var custom: [AIProvider: CustomQuota] = [:]
     @Published private(set) var refreshing = false
@@ -485,7 +619,7 @@ final class AIUsageMonitor: ObservableObject {
         let savedID = UserDefaults.standard.string(forKey: "device.id")
         deviceID = savedID ?? UUID().uuidString
         if savedID == nil && start { UserDefaults.standard.set(deviceID, forKey: "device.id") }
-        for provider in AIProvider.allCases {
+        for provider in AIProvider.quotaProviders {
             if let data = UserDefaults.standard.data(forKey: "ai.custom.\(provider.rawValue)"), let budget = try? JSONDecoder().decode(CustomQuota.self, from: data), budget.valid { custom[provider] = budget }
         }
         if start { resume() }
@@ -523,24 +657,39 @@ final class AIUsageMonitor: ObservableObject {
         if queryRemote { lastRemote = Date() }
         queue.async { [weak self] in
             guard let self else { return }
-            let parsed = Dictionary(uniqueKeysWithValues: AIProvider.allCases.map { provider in
-                (provider, (ledger ? CCSwitchLedger.activity(provider) : nil) ?? self.scanner.scan(provider))
-            })
+            // CC Switch covers every app it has rows for; local logs fill in the rest.
+            let ledgerApps = ledger ? Set(CCSwitchLedger.appTypes()) : []
+            let prices = CCSwitchLedger.prices()
+            var candidates = AIProvider.localSources
+            for app in ledgerApps.sorted() { if let provider = AIProvider(rawValue: app), !candidates.contains(provider) { candidates.append(provider) } }
+            var parsed: [AIProvider: TokenActivity] = [:]
+            for provider in candidates {
+                if ledgerApps.contains(provider.rawValue), let activity = CCSwitchLedger.activity(provider) { parsed[provider] = activity }
+                else if AIProvider.localSources.contains(provider) { parsed[provider] = self.scanner.scan(provider, prices: prices) }
+            }
             var shown = parsed, peers: [UsageSync.Device] = [], message = ""
             if sync {
                 if UsageSync.available {
+                    let used = parsed.filter { $0.key.hasQuota || $0.value.total > 0 }
                     let device = UsageSync.Device(id: deviceID, name: self.deviceName, updatedAt: Date(),
-                                                  providers: Dictionary(uniqueKeysWithValues: parsed.map { ($0.key.rawValue, UsageSync.days($0.value)) }))
+                                                  providers: Dictionary(uniqueKeysWithValues: used.map { ($0.key.rawValue, UsageSync.days($0.value)) }))
                     do { try UsageSync.publish(device) } catch { message = "无法写入 iCloud 云盘：\(error.localizedDescription)" }
                     peers = UsageSync.peers(excluding: deviceID)
-                    for provider in AIProvider.allCases {
-                        shown[provider] = UsageSync.merge(parsed[provider]!, peers: peers.compactMap { $0.providers[provider.rawValue] })
+                    // Services used only on another Mac still appear here.
+                    var keys = Set(parsed.keys)
+                    for peer in peers { for key in peer.providers.keys { if let provider = AIProvider(rawValue: key) { keys.insert(provider) } } }
+                    for provider in keys {
+                        shown[provider] = UsageSync.merge(parsed[provider] ?? TokenActivity(loaded: true), peers: peers.compactMap { $0.providers[provider.rawValue] })
                     }
                 } else { message = "未找到 iCloud 云盘，请在“系统设置 → Apple 账户 → iCloud”中开启 iCloud 云盘。" }
             }
+            let visible = AIProvider.quotaProviders + shown.filter { !$0.key.hasQuota && $0.value.total > 0 }
+                .sorted { $0.value.total > $1.value.total }.map(\.key)
             DispatchQueue.main.async { [weak self] in
                 guard let self, version == self.generation else { return }
                 self.activity = shown
+                self.providers = visible
+                if !visible.contains(self.selected) { self.selected = visible[0] }
                 if self.syncEnabled { self.peers = peers; self.syncMessage = message }
             }
             var quotas: [AIProvider: AccountQuota] = [:]
@@ -548,7 +697,7 @@ final class AIUsageMonitor: ObservableObject {
             if queryRemote {
                 quotas[.codex] = self.quotaClient.codex()
                 quotas[.claude] = self.quotaClient.claude(allowPrompt: allowClaudePrompt)
-                if statusPages { for provider in AIProvider.allCases { statuses[provider] = self.quotaClient.status(provider) } }
+                if statusPages { for provider in AIProvider.quotaProviders { statuses[provider] = self.quotaClient.status(provider) } }
             }
             DispatchQueue.main.async { [weak self] in
                 guard let self, version == self.generation else { return }

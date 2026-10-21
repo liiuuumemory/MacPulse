@@ -8,7 +8,7 @@
 
 ## 界面
 
-1.5 版下拉面板仅显示总览，使用 300 pt 宽度，采用两列指标，网络与内存/磁盘并排显示，名称和数值就近排列，无需上下滚动。底部齿轮打开正常窗口，提供菜单栏自定义、传感器、进程、常规设置、提醒和 AI 用量。设置采用就近标签和分组卡片，菜单栏预览固定在顶部，传感器以双列显示。界面使用 SwiftUI 和 AppKit 原生毛玻璃材质，跟随系统明暗模式及辅助功能设置。
+1.6 版下拉面板仅显示总览，使用 300 pt 宽度，采用两列指标，网络与内存/磁盘并排显示，名称和数值就近排列，无需上下滚动。底部齿轮打开正常窗口，提供菜单栏自定义、传感器、进程、常规设置、提醒和 AI 用量。设置采用就近标签和分组卡片，菜单栏预览固定在顶部，传感器以双列显示。界面使用 SwiftUI 和 AppKit 原生毛玻璃材质，跟随系统明暗模式及辅助功能设置。
 
 ## 使用
 
@@ -26,10 +26,11 @@
 
 ## AI 用量与自定义额度
 
-总览中的 Codex / Claude 按钮切换对应服务，显示今日、近 7 天、累计 Token 及估算费用和近半年活动热力图。点击小格查看当天读数，右上角详情按钮直接打开“AI 用量”设置。
+总览中的服务按钮切换 AI 服务，显示今日、近 7 天、累计 Token 及估算费用和近半年活动热力图。Codex 与 Claude 始终显示；Gemini、Qwen、OpenCode、Grok Build 等其他 agent 有用量记录后自动出现（服务超过 3 个时改为下拉菜单）。其他 agent 只统计用量与估算费用，不查询账户额度。点击小格查看当天读数，右上角详情按钮直接打开“AI 用量”设置。
 
-- **数据来源**：默认优先只读 CC Switch 的用量记录（`~/.cc-switch/cc-switch.db` 中的 `proxy_request_logs` 与 `usage_daily_rollups`，不读取服务商凭据表）。CC Switch 能解析 Codex 压缩为 `.jsonl.zst` 的旧会话，并在清理明细后保留按天汇总，费用按其价格表和服务商倍率计算。未安装 CC Switch 或关闭该选项时，回退到下方的本机日志扫描，并提示有多少个压缩会话无法读取（macOS 不自带 zstd 解码）。
-- **费用估算**：本机日志模式按内置的 API 公开标价（2026-10）估算，区分未缓存输入、缓存写入（5 分钟 1.25 倍、1 小时 2 倍）、缓存读取和输出；不在价格表中的模型显示“无标价”。订阅套餐不按 Token 计费，金额不等同于账单。设置页按模型列出次数、Token 和费用。
+- **数据来源**：默认优先只读 CC Switch 的用量记录（`~/.cc-switch/cc-switch.db` 中的 `proxy_request_logs` 与 `usage_daily_rollups`，不读取服务商凭据表）。其中有记录的每个应用都会自动显示。CC Switch 能解析 Codex 压缩为 `.jsonl.zst` 的旧会话，并在清理明细后保留按天汇总，费用按其价格表和服务商倍率计算；Token 合计沿用 CC Switch 的口径（按 `input_token_semantics` 归一为新增输入 + 输出 + 缓存写入 + 缓存读取，Codex / Gemini / Grok Build 的输入本身含缓存）。某个应用在 CC Switch 中没有记录时，改读它的本机日志。未安装 CC Switch 或关闭该选项时，回退到下方的本机日志扫描，并提示有多少个压缩会话无法读取（macOS 不自带 zstd 解码）。
+- **其他 agent 的本机日志**：Gemini CLI（`~/.gemini/tmp/*/chats/` 中的 `.json` / `.jsonl` 会话记录，按会话与消息 ID 去重，输入是否含缓存按记录中的 total 判断）、Qwen Code（`~/.qwen/projects/*/chats/*.jsonl` 的 usageMetadata）、OpenCode（1.2 起的 `~/.local/share/opencode/opencode.db`，以及旧版 `storage/message/` 下的消息文件，两者按消息 ID 去重，直接采用 OpenCode 记录的费用）。各格式参考 [tokscale](https://github.com/junhoyeo/tokscale) 的整理。
+- **费用估算**：本机日志模式按内置的 API 公开标价（2026-10）估算；内置表没有的模型（如 Gemini、Qwen 系列）使用 CC Switch 的价格表，区分未缓存输入、缓存写入（5 分钟 1.25 倍、1 小时 2 倍）、缓存读取和输出；不在价格表中的模型显示“无标价”。订阅套餐不按 Token 计费，金额不等同于账单。设置页按模型列出次数、Token 和费用。
 - **多台 Mac 汇总（可选，默认关闭）**：开启后每台 Mac 向“iCloud 云盘/MacPulse”写入一个只含按天 Token 数与估算费用的小文件，不含会话内容、路径或账户信息，并合并其他 Mac 的文件；模型明细只显示本机。
 - **额度倒计时与服务状态**：额度窗口显示“2 小时 13 分后重置”式倒计时，悬停可看具体时间。随额度查询一起读取 status.openai.com / status.claude.com 的公开状态，有故障时在服务名旁显示提示，可在设置中关闭。
 
@@ -133,6 +134,7 @@ git pull && bash build.sh
 - `Source/MenuBar.swift`：配置、固定宽度布局、文字绘制和菜单栏编辑器。
 - `Source/Preferences.swift`：正常设置窗口、传感器与常规设置。
 - `Source/AIUsage.swift`：本机会话 Token 去重统计、增量续读、费用估算、CC Switch 记录读取与自定义额度。
+- `Source/AgentLogs.swift`：Gemini CLI、Qwen Code 与 OpenCode 的用量记录读取。
 - `Source/UsageSync.swift`：可选的 iCloud 云盘多设备按天汇总。
 - `Source/Alerts.swift`：提醒规则与系统通知。
 - `Source/Updater.swift`：GitHub Releases 检测更新。

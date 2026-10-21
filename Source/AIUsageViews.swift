@@ -58,6 +58,31 @@ struct TokenHeatmap: View {
     }
 }
 
+extension AIProvider {
+    var color: Color {
+        switch rawValue {
+        case "codex": return .purple
+        case "claude": return .orange
+        case "gemini": return .blue
+        case "qwen": return .indigo
+        case "opencode": return .green
+        case "grokbuild": return .gray
+        default: return .teal
+        }
+    }
+}
+
+/// Segmented for a few services, a menu once more agents report usage.
+struct ProviderPicker: View {
+    @ObservedObject var usage: AIUsageMonitor
+    var body: some View {
+        let picker = Picker("AI 服务", selection: $usage.selected) {
+            ForEach(usage.providers) { provider in Text(provider.title).tag(provider) }
+        }.labelsHidden()
+        if usage.providers.count <= 3 { picker.pickerStyle(.segmented) } else { picker.pickerStyle(.menu).fixedSize() }
+    }
+}
+
 struct QuotaBar: View {
     let fraction: Double
     var body: some View {
@@ -149,9 +174,7 @@ struct AIUsagePanel: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text("AI 用量").font(.callout.weight(.medium))
-                Picker("AI 服务", selection: $usage.selected) {
-                    ForEach(AIProvider.allCases) { provider in Text(provider.title).tag(provider) }
-                }.pickerStyle(.segmented).labelsHidden().controlSize(.small)
+                ProviderPicker(usage: usage).controlSize(.small)
                 if let service = usage.status[usage.selected], service.degraded {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                         .help("\(usage.selected.title) 服务状态：\(service.label)（\(service.description)）")
@@ -166,8 +189,8 @@ struct AIUsagePanel: View {
                 statistic("近 7 天", activity.week, cost: activity.weekCost)
                 statistic("累计", activity.total, cost: activity.totalCost)
             }.help("费用按 API 公开标价估算，不等同于账单")
-            TokenHeatmap(activity: activity, color: usage.selected == .codex ? .purple : .orange)
-            AIQuotaSummary(usage: usage)
+            TokenHeatmap(activity: activity, color: usage.selected.color)
+            if usage.selected.hasQuota { AIQuotaSummary(usage: usage) }
         }
     }
     private func statistic(_ title: String, _ value: Double, cost: Double) -> some View {
@@ -204,61 +227,66 @@ struct AIUsageSettingsView: View {
                 Button { usage.refresh() } label: { Label(usage.refreshing ? "更新中" : "刷新", systemImage: "arrow.clockwise") }
                     .disabled(usage.refreshing)
             }
-            Picker("AI 服务", selection: $usage.selected) {
-                ForEach(AIProvider.allCases) { provider in Text(provider.title).tag(provider) }
-            }.pickerStyle(.segmented).labelsHidden().frame(width: 240, alignment: .leading)
-            PreferenceCard(title: "额度显示") {
-                AIQuotaSummary(usage: usage, compact: false)
-                HStack(spacing: 8) {
-                    if usage.selected == .claude {
-                        Button("连接本机 Claude Code") { usage.refresh(allowClaudePrompt: true) }.disabled(usage.refreshing)
-                    }
-                    Button("打开账户用量页面") {
-                        let account = usage.accounts[usage.selected]
-                        let fallback = URL(string: usage.selected == .codex ? "https://chatgpt.com/codex/settings/usage" : "https://claude.ai/settings/usage")!
-                        NSWorkspace.shared.open(account?.website ?? fallback)
-                    }
-                }
-                Text("自动额度每 5 分钟刷新。读取不到时保留错误提示，已有数据会标记为旧数据。")
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle("同时检查服务状态页（status.openai.com / status.claude.com，不发送任何本机数据）", isOn: $usage.checkStatus)
-                    .toggleStyle(.checkbox).font(.caption)
-            }
-            PreferenceCard(title: usage.selected.title + " 自定义额度") {
-                Toggle("使用自定义额度", isOn: $enabled).toggleStyle(.checkbox)
-                HStack(alignment: .top, spacing: 16) {
-                    PreferenceField(title: "总额度") { TextField("例如 100", text: $total).textFieldStyle(.roundedBorder) }
-                    PreferenceField(title: "已用额度") { TextField("例如 24", text: $used).textFieldStyle(.roundedBorder) }
-                }
-                HStack(alignment: .top, spacing: 16) {
-                    PreferenceField(title: "单位") {
-                        Picker("单位", selection: $unit) {
-                            Text("美元 USD").tag("USD"); Text("人民币 CNY").tag("CNY")
-                            Text("Token").tag("Token"); Text("次数").tag("次"); Text("百分比 %").tag("%")
-                        }
-                    }
-                    PreferenceField(title: "重置周期") {
-                        Picker("重置周期", selection: $period) {
-                            Text("不自动重置").tag("none"); Text("每天零点").tag("day")
-                            Text("每周一零点").tag("week"); Text("每月 1 日").tag("month")
-                        }
-                    }
-                }
-                if let draft {
+            ProviderPicker(usage: usage).frame(maxWidth: 80 * CGFloat(max(3, usage.providers.count)), alignment: .leading)
+            if usage.selected.hasQuota {
+                PreferenceCard(title: "额度显示") {
+                    AIQuotaSummary(usage: usage, compact: false)
                     HStack(spacing: 8) {
-                        Text("剩余").foregroundStyle(.secondary)
-                        Text(UsageFormat.amount(draft.remaining(), unit: draft.unit)).monospacedDigit()
-                    }.font(.callout)
-                } else { Text("请填写大于 0 的总额度和不小于 0 的已用额度。").font(.caption).foregroundStyle(.orange) }
-                HStack(spacing: 8) {
-                    Button("保存额度") {
-                        if let draft { usage.save(draft, provider: usage.selected); message = "已保存，菜单栏总览同步更新" }
-                    }.disabled(draft == nil)
-                    Button("已用归零") { used = "0"; if let draft { usage.save(draft, provider: usage.selected); message = "已用额度已归零" } }.disabled(draft == nil)
-                    if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
+                        if usage.selected == .claude {
+                            Button("连接本机 Claude Code") { usage.refresh(allowClaudePrompt: true) }.disabled(usage.refreshing)
+                        }
+                        Button("打开账户用量页面") {
+                            let account = usage.accounts[usage.selected]
+                            let fallback = URL(string: usage.selected == .codex ? "https://chatgpt.com/codex/settings/usage" : "https://claude.ai/settings/usage")!
+                            NSWorkspace.shared.open(account?.website ?? fallback)
+                        }
+                    }
+                    Text("自动额度每 5 分钟刷新。读取不到时保留错误提示，已有数据会标记为旧数据。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle("同时检查服务状态页（status.openai.com / status.claude.com，不发送任何本机数据）", isOn: $usage.checkStatus)
+                        .toggleStyle(.checkbox).font(.caption)
                 }
-                Text("自定义额度为手动记录，不会自动扣减。到所选周期时，仅将已用额度归零；周期按这台 Mac 的时区计算。关闭后显示自动查询结果。")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                PreferenceCard(title: usage.selected.title + " 自定义额度") {
+                    Toggle("使用自定义额度", isOn: $enabled).toggleStyle(.checkbox)
+                    HStack(alignment: .top, spacing: 16) {
+                        PreferenceField(title: "总额度") { TextField("例如 100", text: $total).textFieldStyle(.roundedBorder) }
+                        PreferenceField(title: "已用额度") { TextField("例如 24", text: $used).textFieldStyle(.roundedBorder) }
+                    }
+                    HStack(alignment: .top, spacing: 16) {
+                        PreferenceField(title: "单位") {
+                            Picker("单位", selection: $unit) {
+                                Text("美元 USD").tag("USD"); Text("人民币 CNY").tag("CNY")
+                                Text("Token").tag("Token"); Text("次数").tag("次"); Text("百分比 %").tag("%")
+                            }
+                        }
+                        PreferenceField(title: "重置周期") {
+                            Picker("重置周期", selection: $period) {
+                                Text("不自动重置").tag("none"); Text("每天零点").tag("day")
+                                Text("每周一零点").tag("week"); Text("每月 1 日").tag("month")
+                            }
+                        }
+                    }
+                    if let draft {
+                        HStack(spacing: 8) {
+                            Text("剩余").foregroundStyle(.secondary)
+                            Text(UsageFormat.amount(draft.remaining(), unit: draft.unit)).monospacedDigit()
+                        }.font(.callout)
+                    } else { Text("请填写大于 0 的总额度和不小于 0 的已用额度。").font(.caption).foregroundStyle(.orange) }
+                    HStack(spacing: 8) {
+                        Button("保存额度") {
+                            if let draft { usage.save(draft, provider: usage.selected); message = "已保存，菜单栏总览同步更新" }
+                        }.disabled(draft == nil)
+                        Button("已用归零") { used = "0"; if let draft { usage.save(draft, provider: usage.selected); message = "已用额度已归零" } }.disabled(draft == nil)
+                        if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
+                    }
+                    Text("自定义额度为手动记录，不会自动扣减。到所选周期时，仅将已用额度归零；周期按这台 Mac 的时区计算。关闭后显示自动查询结果。")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                PreferenceCard(title: usage.selected.title) {
+                    Text("此服务只统计 Token 用量与估算费用，不查询账户额度，也不支持自定义额度。")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
             }
             DisclosureGroup("用量明细与数据来源", isExpanded: $detailsExpanded) { activityDetails.padding(.top, 10) }
         }.controlSize(.small)
@@ -294,7 +322,7 @@ struct AIUsageSettingsView: View {
                     field("近 7 天", activity.week, cost: activity.weekCost)
                     field("累计", activity.total, cost: activity.totalCost)
                 }
-                TokenHeatmap(activity: activity, color: usage.selected == .codex ? .purple : .orange, compact: false)
+                TokenHeatmap(activity: activity, color: usage.selected.color, compact: false)
                 if !activity.models.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("按模型").font(.callout.weight(.medium))
