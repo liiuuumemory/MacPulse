@@ -73,7 +73,8 @@ final class UpdateChecker: ObservableObject {
                     self.lastChecked = now
                     UserDefaults.standard.set(now, forKey: "update.lastChecked")
                     self.message = self.updateAvailable ? "" : "已是最新版本"
-                case 404: self.message = "仓库暂未发布版本"; self.lastChecked = now
+                // Not a completed check: retry on the next launch instead of waiting a day.
+                case 404: self.message = "仓库暂未发布版本"
                 case 403, 429: self.message = "GitHub 请求过于频繁，请稍后再试"
                 default: self.message = error == nil ? "GitHub 暂时不可用（\(status ?? 0)）" : "无法连接 GitHub"
                 }
