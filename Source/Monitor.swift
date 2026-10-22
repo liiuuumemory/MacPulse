@@ -234,9 +234,17 @@ final class Monitor: ObservableObject {
         let fans = [FanReading(rpm: 2410, min: 1200, max: 6000), FanReading(rpm: 2280, min: 1200, max: 5600), FanReading(rpm: 1890, min: 1000, max: 4900)]
         return Array(fans.prefix(max(0, count)))
     }()
+    /// `--snapshot-demo` swaps the process list for sample apps, so screenshots show nothing of this Mac.
+    private static let demoProcesses: [ProcessUsage]? = {
+        guard CommandLine.arguments.contains("--snapshot"), CommandLine.arguments.contains("--snapshot-demo") else { return nil }
+        return [ProcessUsage(pid: 101, name: "Xcode", cpu: 38.4, memory: 2.1e9), ProcessUsage(pid: 102, name: "Safari", cpu: 12.7, memory: 1.3e9),
+                ProcessUsage(pid: 103, name: "Final Cut Pro", cpu: 9.2, memory: 1.6e9), ProcessUsage(pid: 104, name: "Music", cpu: 2.1, memory: 3.1e8),
+                ProcessUsage(pid: 105, name: "Finder", cpu: 0.8, memory: 1.9e8)]
+    }()
     func accept(_ value: Sample) {
         var value = value
         if let fans = Self.simulatedFans { value.smcAvailable = true; value.fans = fans }
+        if let processes = Self.demoProcesses { value.processes = processes; value.processesHidden = 0 }
         if hasVisibleViews { objectWillChange.send() }
         if let last = lastEnergyDate, let old = lastWatts, let watts = value.watts {
             let duration = value.date.timeIntervalSince(last)

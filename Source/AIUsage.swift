@@ -88,6 +88,22 @@ struct TokenActivity {
     var week: Double { tokens(since: Self.weekStart) }
     var todayCost: Double { cost(since: Self.todayStart) }
     var weekCost: Double { cost(since: Self.weekStart) }
+    /// Made-up usage for `--snapshot-demo`, so published screenshots carry no real usage or spend.
+    static func demo(seed: UInt64, scale: Double) -> Self {
+        var state = seed
+        func next() -> Double { state = state &* 6364136223846793005 &+ 1442695040888963407; return Double(state >> 33) / Double(1 << 31) }
+        let calendar = Calendar.current, today = calendar.startOfDay(for: Date())
+        var activity = TokenActivity(loaded: true)
+        for offset in (0..<150).reversed() {
+            let date = calendar.date(byAdding: .day, value: -offset, to: today)!
+            let weekend = calendar.isDateInWeekend(date)
+            guard next() > (weekend ? 0.65 : 0.25) else { continue }
+            let tokens = (1.5 + next() * 14) * 1_000_000 * scale
+            activity.days.append(UsageDay(date: date, tokens: tokens, cost: tokens / 1_000_000 * 0.42))
+        }
+        activity.latest = Date(); activity.updatedAt = Date()
+        return activity
+    }
 }
 
 /// List prices in USD per million tokens, used only for a local estimate. Subscription
@@ -653,7 +669,8 @@ final class AIUsageMonitor: ObservableObject {
         refreshing = true
         let version = generation
         let ledger = preferCCSwitch, statusPages = checkStatus, sync = syncEnabled, deviceID = deviceID
-        let queryRemote = remote || Date().timeIntervalSince(lastRemote) >= 300
+        let demo = CommandLine.arguments.contains("--snapshot") && CommandLine.arguments.contains("--snapshot-demo")
+        let queryRemote = !demo && (remote || Date().timeIntervalSince(lastRemote) >= 300)
         if queryRemote { lastRemote = Date() }
         queue.async { [weak self] in
             guard let self else { return }
@@ -683,6 +700,7 @@ final class AIUsageMonitor: ObservableObject {
                     }
                 } else { message = "未找到 iCloud 云盘，请在“系统设置 → Apple 账户 → iCloud”中开启 iCloud 云盘。" }
             }
+            if demo { shown = [.codex: .demo(seed: 7, scale: 0.6), .claude: .demo(seed: 42, scale: 1)]; peers = [] }
             let visible = AIProvider.quotaProviders + shown.filter { !$0.key.hasQuota && $0.value.total > 0 }
                 .sorted { $0.value.total > $1.value.total }.map(\.key)
             DispatchQueue.main.async { [weak self] in
