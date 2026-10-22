@@ -237,12 +237,11 @@ struct AIUsageSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("AI 用量与额度").font(.title2.weight(.semibold))
+                ProviderPicker(usage: usage).frame(maxWidth: 80 * CGFloat(max(3, usage.providers.count)), alignment: .leading)
                 Spacer()
                 Button { usage.refresh() } label: { Label(usage.refreshing ? "更新中" : "刷新", systemImage: "arrow.clockwise") }
                     .disabled(usage.refreshing)
             }
-            ProviderPicker(usage: usage).frame(maxWidth: 80 * CGFloat(max(3, usage.providers.count)), alignment: .leading)
             if usage.selected.hasQuota {
                 PreferenceCard(title: "额度显示") {
                     AIQuotaSummary(usage: usage, compact: false)

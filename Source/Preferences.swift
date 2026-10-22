@@ -3,79 +3,169 @@ import SwiftUI
 
 private typealias PreferenceState<Value> = SwiftUI.State<Value>
 
+struct SettingsPage: Identifiable {
+    let id: String
+    let title: String
+    let symbol: String
+    let detail: String
+}
+
+struct SettingsGroup: Identifiable {
+    let id: String
+    let title: String
+    /// One tile color per group, stepping blue → indigo → violet, with slate for the app-wide page.
+    let color: NSColor
+    let pages: [SettingsPage]
+    static let all: [SettingsGroup] = [
+        SettingsGroup(id: "display", title: "显示", color: NSColor(srgbRed: 0.231, green: 0.608, blue: 0.965, alpha: 1), pages: [
+            SettingsPage(id: "menu", title: "菜单栏", symbol: "menubar.rectangle", detail: "自定义菜单栏中显示的小部件、顺序与外观，修改即时生效。"),
+        ]),
+        SettingsGroup(id: "monitor", title: "监控", color: NSColor(srgbRed: 0.231, green: 0.471, blue: 0.965, alpha: 1), pages: [
+            SettingsPage(id: "sensors", title: "传感器", symbol: "thermometer.medium", detail: "查看芯片、内存、电池等全部温度、功耗与风扇读数，以及系统运行概要。"),
+            SettingsPage(id: "processes", title: "进程", symbol: "list.bullet.rectangle", detail: "列出 CPU 与内存占用最高的进程，快速找到拖慢 Mac 的程序。"),
+        ]),
+        SettingsGroup(id: "hardware", title: "硬件", color: NSColor(srgbRed: 0.357, green: 0.424, blue: 0.941, alpha: 1), pages: [
+            SettingsPage(id: "fan", title: "风扇", symbol: "fan", detail: "查看风扇转速，选择预设或自定义温度曲线来控制风扇。"),
+            SettingsPage(id: "mouse", title: "外设", symbol: "computermouse", detail: "读取并调整支持的无线鼠标设置，查看外设电量与连接状态。"),
+        ]),
+        SettingsGroup(id: "service", title: "服务", color: NSColor(srgbRed: 0.486, green: 0.361, blue: 0.902, alpha: 1), pages: [
+            SettingsPage(id: "ai", title: "AI 用量", symbol: "sparkles", detail: "汇总 Codex、Claude 等 AI 工具的本地用量与账户额度，可设置自定义额度。"),
+            SettingsPage(id: "alerts", title: "提醒", symbol: "bell.badge", detail: "温度过高、内存紧张、磁盘或电量不足、AI 额度将尽时发送系统通知。"),
+        ]),
+        SettingsGroup(id: "system", title: "系统", color: NSColor(srgbRed: 0.478, green: 0.518, blue: 0.580, alpha: 1), pages: [
+            SettingsPage(id: "general", title: "常规", symbol: "gearshape", detail: "刷新间隔、登录启动、网络接口、电池信息、更新检查与诊断工具。"),
+        ]),
+    ]
+    static func group(of page: String) -> SettingsGroup? { all.first { $0.pages.contains { $0.id == page } } }
+}
+
+/// System Settings–style icon tile: a white symbol on a softly graded group color.
+struct SettingsIconTile: View {
+    let symbol: String
+    let color: NSColor
+    var size: CGFloat = 22
+    var body: some View {
+        let top = color.blended(withFraction: 0.18, of: .white) ?? color
+        RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
+            .fill(LinearGradient(colors: [Color(nsColor: top), Color(nsColor: color)], startPoint: .top, endPoint: .bottom))
+            .overlay(Image(systemName: symbol).font(.system(size: size * 0.55, weight: .semibold)).foregroundStyle(.white))
+            .frame(width: size, height: size)
+    }
+}
+
 struct PreferencesView: View {
     @ObservedObject var monitor: Monitor
-    @PreferenceState private var selection: String
+    /// Visited pages, newest last; `cursor` points at the page on screen so back and forward can walk it.
+    @PreferenceState private var history: [String]
+    @PreferenceState private var cursor = 0
     init(monitor: Monitor, initialTab: String = "menu") {
         self.monitor = monitor
-        self._selection = State<String>(initialValue: initialTab)
+        self._history = State<[String]>(initialValue: [initialTab])
     }
     /// Fanless Macs (MacBook Air, some minis) get no fan page; until the SMC answers, keep it.
     private var hasFans: Bool { !monitor.sample.smcAvailable || !monitor.sample.fans.isEmpty }
-    private var pages: [(id: String, title: String, symbol: String, color: Color)] { Self.allPages.filter { $0.id != "fan" || hasFans } }
-    /// The page on screen: a jump to the fan page on a fanless Mac lands on sensors.
-    private var current: String { selection == "fan" && !hasFans ? "sensors" : selection }
-    private static let allPages: [(id: String, title: String, symbol: String, color: Color)] = [
-        ("menu", "菜单栏", "menubar.rectangle", .blue),
-        ("sensors", "传感器", "thermometer.medium", .red),
-        ("fan", "风扇", "fan", .cyan),
-        ("processes", "进程", "list.bullet.rectangle", .green),
-        ("general", "常规", "gearshape", .gray),
-        ("alerts", "提醒", "bell.badge", .orange),
-        ("mouse", "外设", "computermouse", .teal),
-        ("ai", "AI 用量", "sparkles", .purple),
-    ]
-    var body: some View {
-        HStack(spacing: 0) {
-            sidebar.frame(width: 180)
-            Divider()
-            VStack(spacing: 0) {
-                if current == "menu" {
-                    MenuBarPreview(monitor: monitor)
-                        .frame(maxWidth: 620).padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 14)
-                        .frame(maxWidth: .infinity)
-                    Divider()
-                }
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        if current == "menu" { MenuBarEditor(monitor: monitor) }
-                        else if current == "sensors" { SensorSettingsView(monitor: monitor) }
-                        else if current == "processes" { ProcessSettingsView(monitor: monitor) }
-                        else if current == "alerts" { AlertSettingsView(alerts: monitor.alerts) }
-                        else if current == "ai" { AIUsageSettingsView(usage: monitor.aiUsage) }
-                        else if current == "mouse" { MouseSettingsView(center: monitor.mice) }
-                        else if current == "fan" { FanSettingsView(fan: monitor.fan, temperature: monitor.sample.cpuTemp, readings: monitor.sample.fans) }
-                        else { GeneralSettingsView(monitor: monitor) }
-                    }.frame(maxWidth: 620, alignment: .leading).padding(24)
-                        .frame(maxWidth: .infinity, alignment: .top)
-                }
-            }
-            // The content column may shrink; anything still too wide is clipped instead of shifting the sidebar.
-            .frame(minWidth: 0, maxWidth: .infinity).clipped()
-            .background(SettingsColor.content)
-        }.frame(minWidth: 800, minHeight: 580)
-            .onReceive(monitor.aiUsage.$preferencesTab.dropFirst()) { selection = $0 }
+    private var groups: [SettingsGroup] {
+        SettingsGroup.all.map { SettingsGroup(id: $0.id, title: $0.title, color: $0.color, pages: $0.pages.filter { $0.id != "fan" || hasFans }) }
     }
-    /// System Settings–style page list: a tinted icon tile plus a full-size label.
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(pages, id: \.id) { page in
-                Button { selection = page.id } label: {
-                    HStack(spacing: 9) {
-                        Image(systemName: page.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
-                            .frame(width: 22, height: 22).background(page.color, in: RoundedRectangle(cornerRadius: 6))
-                        Text(page.title).font(.system(size: 13, weight: current == page.id ? .semibold : .regular))
-                        Spacer(minLength: 0)
+    /// The page on screen: a jump to the fan page on a fanless Mac lands on sensors.
+    private var current: String {
+        let selection = history[cursor]
+        return selection == "fan" && !hasFans ? "sensors" : selection
+    }
+    private var page: SettingsPage {
+        SettingsGroup.all.flatMap(\.pages).first { $0.id == current } ?? SettingsGroup.all[0].pages[0]
+    }
+    private func go(_ id: String) {
+        guard id != history[cursor] else { return }
+        history = Array(history.prefix(cursor + 1)) + [id]
+        cursor = history.count - 1
+    }
+    var body: some View {
+        NavigationSplitView(columnVisibility: .constant(.all)) {
+            sidebar
+                .frame(width: 220)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 220, max: 220)
+                .toolbar(removing: .sidebarToggle)
+        } detail: {
+            detail
+                .navigationTitle(page.title)
+                .toolbar {
+                    ToolbarItem(placement: .navigation) {
+                        ControlGroup {
+                            Button { cursor -= 1 } label: { Label("后退", systemImage: "chevron.left") }
+                                .disabled(cursor == 0).keyboardShortcut("[", modifiers: .command)
+                            Button { cursor += 1 } label: { Label("前进", systemImage: "chevron.right") }
+                                .disabled(cursor >= history.count - 1).keyboardShortcut("]", modifiers: .command)
+                        }.controlGroupStyle(.navigation)
                     }
-                    .padding(.horizontal, 8).padding(.vertical, 5)
-                    .background(current == page.id ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
-                    .contentShape(Rectangle())
-                }.buttonStyle(.plain)
-                    .accessibilityAddTraits(current == page.id ? .isSelected : [])
+                }
+        }
+        .frame(minWidth: 800, minHeight: 580)
+        .onReceive(monitor.aiUsage.$preferencesTab.dropFirst()) { go($0) }
+    }
+    private var detail: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                if current == "menu" { MenuBarPreview(monitor: monitor); MenuBarEditor(monitor: monitor) }
+                else if current == "sensors" { SensorSettingsView(monitor: monitor) }
+                else if current == "processes" { ProcessSettingsView(monitor: monitor) }
+                else if current == "alerts" { AlertSettingsView(alerts: monitor.alerts) }
+                else if current == "ai" { AIUsageSettingsView(usage: monitor.aiUsage) }
+                else if current == "mouse" { MouseSettingsView(center: monitor.mice) }
+                else if current == "fan" { FanSettingsView(fan: monitor.fan, temperature: monitor.sample.cpuTemp, readings: monitor.sample.fans) }
+                else { GeneralSettingsView(monitor: monitor) }
+            }.frame(maxWidth: 620, alignment: .leading).padding(24)
+                .frame(maxWidth: .infinity, alignment: .top)
+        }
+        // The content column may shrink; anything still too wide is clipped instead of pushing the sidebar.
+        .frame(minWidth: 0, maxWidth: .infinity).clipped()
+        .background(SettingsColor.content)
+    }
+    /// Page header: icon and large title, one line on what the page is for, then a rule.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                SettingsIconTile(symbol: page.symbol, color: SettingsGroup.group(of: page.id)?.color ?? .systemBlue, size: 38)
+                Text(page.title).font(.system(size: 24, weight: .semibold))
             }
-        }.padding(.horizontal, 10).padding(.top, 14)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .background(SettingsColor.sidebar)
+            Text(page.detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Divider().padding(.top, 4)
+        }
+    }
+    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "" }
+    /// Grouped page list with section titles; the selected row is a solid accent pill with white text.
+    private var sidebar: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 10) {
+                    Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 38, height: 38)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("MacPulse").font(.system(size: 14, weight: .semibold))
+                        Text("版本 \(version)").font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }.padding(.horizontal, 8).padding(.bottom, 6)
+                ForEach(groups) { group in
+                    Text(group.title).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                        .padding(.horizontal, 8).padding(.top, 12).padding(.bottom, 3)
+                    ForEach(group.pages) { page in
+                        let selected = current == page.id
+                        Button { go(page.id) } label: {
+                            HStack(spacing: 8) {
+                                SettingsIconTile(symbol: page.symbol, color: group.color)
+                                Text(page.title).font(.system(size: 13, weight: selected ? .medium : .regular))
+                                    .foregroundStyle(selected ? Color.white : Color.primary)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 6).padding(.vertical, 4)
+                            .background(selected ? Color.accentColor : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            .contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                            .accessibilityAddTraits(selected ? .isSelected : [])
+                    }
+                }
+            }.padding(.horizontal, 10).padding(.vertical, 8)
+        }.scrollIndicators(.never)
     }
 }
 
@@ -110,7 +200,6 @@ struct SensorSettingsView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("传感器").font(.title2.weight(.semibold))
             SystemDetailsCard(monitor: monitor)
             Text("\(monitor.sample.sensors.count) 项读数 · CPU / GPU 总览取各组最高温度")
                 .font(.callout).foregroundStyle(.secondary)
@@ -141,11 +230,6 @@ struct ProcessSettingsView: View {
     @ObservedObject var monitor: Monitor
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("进程").font(.title2.weight(.semibold))
-                Spacer()
-                Button("打开活动监视器") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app")) }
-            }
             HStack(alignment: .top, spacing: 12) {
                 list("CPU 占用最高", PanelView.sortedProcesses(monitor.sample.processes, by: "cpu"))
                 list("内存占用最高", PanelView.sortedProcesses(monitor.sample.processes, by: "memory"))
@@ -153,6 +237,7 @@ struct ProcessSettingsView: View {
             Text("CPU 为占单个核心的百分比，多线程进程可超过 100%；内存为物理占用，与活动监视器“内存”列口径一致。"
                  + (monitor.sample.processesHidden > 0 ? "另有 \(monitor.sample.processesHidden) 个系统或其他用户进程需要管理员权限，未列出。" : ""))
                 .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Button("打开活动监视器") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app")) }
         }
     }
     private func list(_ title: String, _ items: [ProcessUsage]) -> some View {
@@ -182,16 +267,12 @@ struct AlertSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("提醒").font(.title2.weight(.semibold))
-                Spacer()
-                Button("发送测试通知") { alerts.sendTest() }.disabled(!alerts.settings.enabled)
-            }
-            HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("启用系统通知提醒").font(.body.weight(.medium))
                     Text("关闭时下方各项不会触发。").font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button("发送测试通知") { alerts.sendTest() }.disabled(!alerts.settings.enabled)
                 Toggle("启用系统通知提醒", isOn: $alerts.settings.enabled).toggleStyle(.switch).labelsHidden()
             }.padding(16).settingsCard()
             if !alerts.status.isEmpty { Text(alerts.status).font(.subheadline).foregroundStyle(.orange) }
@@ -298,7 +379,6 @@ struct GeneralSettingsView: View {
     private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "" }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("常规设置").font(.title2.weight(.semibold))
             HStack(alignment: .top, spacing: 12) {
                 PreferenceCard(title: "采样", minContentHeight: 96) {
                     PreferenceField(title: "刷新间隔") {

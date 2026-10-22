@@ -38,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             if let data = try? JSONEncoder().encode(fan) { UserDefaults.standard.register(defaults: ["fan.v1": data]) }
             // Two sample layout presets; the first counts as applied and edited since.
             var work = MenuConfiguration.performance; work.separators = true
-            var travel = MenuConfiguration.compact; travel.widgets.append(MenuWidget(.battery, "battery", labelMode: "none", color: "green"))
+            var travel = MenuConfiguration.compact; travel.widgets.append(MenuWidget(.hidden, "battery", labelMode: "none", chart: .battery))
             let presets = [MenuLayoutPreset(name: "工作", configuration: work), MenuLayoutPreset(name: "外出", configuration: travel)]
             if let data = try? JSONEncoder().encode(presets) {
                 UserDefaults.standard.register(defaults: ["menuPresets.v1": data, "menuPresets.source": presets[0].id.uuidString])
@@ -110,12 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     @objc func showSettings() {
         popover?.performClose(nil)
         if settingsWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 840, height: 740),
-                                  styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-            window.title = "MacPulse 设置"
-            window.isReleasedWhenClosed = false
-            window.minSize = NSSize(width: 800, height: 620)
-            window.contentViewController = NSHostingController(rootView: PreferencesView(monitor: monitor, initialTab: monitor.aiUsage.preferencesTab))
+            let window = Self.makeSettingsWindow(monitor: monitor, tab: monitor.aiUsage.preferencesTab)
             window.center()
             window.delegate = self
             settingsWindow = window
@@ -124,6 +119,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         monitor.loginEnabled = SMAppService.mainApp.status == .enabled
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+    /// System Settings–style window: the split view runs full height, under the titlebar.
+    static func makeSettingsWindow(monitor: Monitor, tab: String, size: NSSize = NSSize(width: 840, height: 740)) -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.title = "MacPulse 设置"
+        window.toolbarStyle = .unified
+        window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 800, height: 620)
+        let host = NSHostingController(rootView: PreferencesView(monitor: monitor, initialTab: tab))
+        // Lets the split view's toolbar (back / forward, page title) reach this window.
+        host.sceneBridgingOptions = [.toolbars, .title]
+        window.contentViewController = host
+        window.setContentSize(size)
+        return window
     }
     @objc func togglePanel() {
         if NSApp.currentEvent?.type == .rightMouseUp {
@@ -208,9 +218,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             content = AnyView(PanelView(monitor: monitor, height: height, page: page ?? "system"))
             size = NSSize(width: PanelLayout.width, height: height)
         } else {
-            content = AnyView(PreferencesView(monitor: monitor, initialTab: tab == "settings" ? "general" : tab))
-            size = CommandLine.arguments.contains("--small-window") ? NSSize(width: 800, height: 620)
+            let size = CommandLine.arguments.contains("--small-window") ? NSSize(width: 800, height: 620)
                 : NSSize(width: 840, height: CommandLine.arguments.contains("--tall") ? 1900 : 740)
+            let window = Self.makeSettingsWindow(monitor: monitor, tab: tab == "settings" ? "general" : tab, size: size)
+            window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            snapshotWindow = window
+            saveWindowSnapshot(window, path)
+            return
         }
         let host = NSHostingView(rootView: content.background(Color(nsColor: .windowBackgroundColor)))
         host.frame = NSRect(origin: .zero, size: size)
@@ -227,6 +241,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             catch { fputs("Snapshot failed: \(error)\n", stderr); exit(4) }
         }
     }
+    /// Renders the whole window frame (titlebar and toolbar included) from this process only.
+    func saveWindowSnapshot(_ window: NSWindow, _ path: String) {
+        guard let frame = window.contentView?.superview else { exit(2) }
+        // Materials only draw on screen; --onscreen shows the window so it can be captured with screencapture -l.
+        if CommandLine.arguments.contains("--onscreen") {
+            window.center(); NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+            print("Window: \(window.windowNumber)"); fflush(stdout)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { NSApp.terminate(nil) }
+            return
+        }
+        frame.layoutSubtreeIfNeeded()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            guard let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else { exit(2) }
+            frame.cacheDisplay(in: frame.bounds, to: rep)
+            guard let data = rep.representation(using: .png, properties: [:]) else { exit(3) }
+            do { try data.write(to: URL(fileURLWithPath: path)); print("Snapshot saved: \(path)"); NSApp.terminate(nil) }
+            catch { fputs("Snapshot failed: \(error)\n", stderr); exit(4) }
+        }
+    }
     func saveBarSnapshot(_ path: String, dark: Bool) {
         let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)!
         appearance.performAsCurrentDrawingAppearance {
@@ -235,9 +268,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             let configuration = MenuConfiguration.presets.first { $0.id == preset }?.value ?? monitor.menuConfiguration
             let layout = MenuBarLayout(config: configuration)
             let bar = layout.image(monitor)
+            let template = bar.isTemplate
             bar.isTemplate = false
             // Tint the monochrome mask for a faithful standalone menu-bar preview.
-            if layout.items.allSatisfy({ $0.widget.color == "system" }) {
+            if template {
                 bar.lockFocus()
                 NSColor.labelColor.setFill()
                 NSRect(origin: .zero, size: bar.size).fill(using: .sourceIn)
@@ -349,8 +383,20 @@ func tests() {
     precondition(migrated.widgets[1].style == .text && !migrated.widgets[1].enabled && migrated.widgets[1].color == "blue" && migrated.widgets[1].label == "UP")
     var single = try! JSONDecoder().decode(MenuConfiguration.self, from: Data(legacy.replacingOccurrences(of: #""layout":"double""#, with: #""layout":"single""#).utf8))
     precondition(single.widgets.count == 3 && single.widgets.allSatisfy { $0.style == .text }, "single-row groups split side by side")
-    single.widgets[0].style = .ring; single.widgets[0].metric = "fan"
-    precondition(single.sanitized().widgets[0].style == .text, "unsupported styles fall back to text")
+    single.widgets[0].chart = .ring; single.widgets[0].metric = "fan"
+    precondition(single.sanitized().widgets[0].chart == .none, "unsupported graphics are dropped")
+    single.widgets[0].style = .hidden
+    precondition(single.sanitized().widgets[0].style == .text, "graphic-only without a graphic falls back to text")
+    single.widgets[0] = MenuWidget(.stacked, "cpu", "memory", chart: .ring)
+    precondition(single.sanitized().widgets[0].chart == .none, "two stacked metrics carry no graphic")
+    // Before 2.1 a chart was its own widget: a value-less chart followed by text for the same metric merges into one.
+    let charted = #"{"widgets":[{"style":"ring","metric":"claudeQuota","labelMode":"none","color":"orange","showValue":false},{"style":"mini","metric":"claudeQuota"},"#
+        + #"{"style":"battery","metric":"peripheral","showValue":true},{"style":"line","metric":"power","showValue":false},{"style":"mini","metric":"cpu"},{"style":"stacked","metric":"upload","secondary":"download"}]}"#
+    let merged = try! JSONDecoder().decode(MenuConfiguration.self, from: Data(charted.utf8)).widgets
+    precondition(merged.map(\.style) == [.mini, .text, .hidden, .mini, .stacked], "only same-metric pairs merge")
+    precondition(merged[0].chart == .ring && merged[0].color == "orange" && merged[1].chart == .battery && merged[2].chart == .line && merged[3].chart == .none)
+    precondition(MenuConfiguration.presets.allSatisfy { try! JSONDecoder().decode(MenuConfiguration.self, from: JSONEncoder().encode($0.value)).matches($0.value) },
+                 "presets round-trip without being merged again")
     precondition(MenuMetric.rate(1024, bits: false) == "1.0 KB/s")
     precondition(MenuMetric.rate(125000, bits: true) == "1.0 Mb/s")
     precondition(MenuMetric.rate(nil, bits: false) == "—")
@@ -363,8 +409,9 @@ func tests() {
         configuration = .reference
         configuration.widthMode = mode; configuration.alignment = mode == "fit" ? "left" : "right"
         configuration.separators = true; configuration.icon = "fan"; configuration.iconPosition = "trailing"
-        configuration.widgets = WidgetStyle.allCases.map { MenuWidget($0, "cpu", $0 == .stacked ? "download" : "none") }
-            + [MenuWidget(.stacked, "upload", "download", labelMode: "symbol"), MenuWidget(.mini, "power"), MenuWidget(.line, "upload")]
+        configuration.widgets = WidgetStyle.allCases.map { MenuWidget($0, "cpu", $0 == .stacked ? "download" : "none", chart: $0 == .hidden ? .bar : .none) }
+            + WidgetChart.allCases.map { MenuWidget(.mini, "cpu", chart: $0) }
+            + [MenuWidget(.stacked, "upload", "download", labelMode: "symbol"), MenuWidget(.text, "upload", chart: .line)]
         configuration.widgets.append(contentsOf: [MenuWidget(.text, "fan", labelMode: "none")])
         configuration.widgets = Array(configuration.widgets.prefix(MenuConfiguration.maxWidgets))
         let expected = MenuBarLayout(config: configuration)
@@ -403,6 +450,9 @@ func tests() {
     for rate in [125, 250, 500, 1000, 2000, 4000, 8000] { precondition(WLMouseChannel.pollingRate(code: WLMouseChannel.pollingCode(rate)!) == rate) }
     precondition(WLMouseChannel.normalize([0xA1, 0, 2]) == [0, 0xA1, 0, 2] && WLMouseChannel.normalize([0, 0xA1]) == [0, 0xA1])
     precondition(WLMouseModel.resolve(productID: 0xA868)?.name == "花•兽 Mini PRO" && WLMouseModel.resolve(productID: 0xA868)?.maxDPI == 30000)
+    // A mouse on its cable (wired PID) is the same battery entry as its receiver; the shared 1K dongle keeps its own.
+    precondition(WLMouseModel.batteryKey(productID: 0xA869) == "wl-\(0xA868)" && WLMouseModel.batteryKey(productID: 0xA868) == "wl-\(0xA868)")
+    precondition(WLMouseModel.batteryKey(productID: 0xA882) == "wl-\(0xA882)" && WLMouseModel.batteryKey(productID: 0x1234) == "wl-\(0x1234)")
     let shared = WLMouseModel.resolve(productID: 0xA882)!
     precondition(shared.maxDPI == 26000 && shared.lod == [1.0, 2.0], "a shared receiver uses the strictest limits")
     let command = WLMouseChannel.command(group: 1, code: 0x81, length: 10, [1, 6])
@@ -459,6 +509,11 @@ func tests() {
     let recharged = [BatteryPoint(date: base, percent: 20, charging: false), BatteryPoint(date: base.addingTimeInterval(3600), percent: 60, charging: true)] + points.map {
         BatteryPoint(date: $0.date.addingTimeInterval(7200), percent: $0.percent, charging: false) }
     precondition(abs(BatteryHistory.daysLeft(recharged)! - 7) < 0.01, "the estimate starts after the last charge")
+    // The one-second charge check redraws only when the level, charge state or staleness changes, not the timestamp.
+    let reading = PeripheralBattery(key: "wl-1", name: "鼠标", percent: 72, charging: false, updated: Date(), source: "")
+    precondition(reading.sameReading(as: PeripheralBattery(key: "wl-1", name: "鼠标", percent: 72, charging: false, updated: Date().addingTimeInterval(-1), source: "")))
+    precondition(!reading.sameReading(as: PeripheralBattery(key: "wl-1", name: "鼠标", percent: 72, charging: true, updated: Date(), source: "")))
+    precondition(!reading.sameReading(as: PeripheralBattery(key: "wl-1", name: "鼠标", percent: 72, charging: false, updated: Date().addingTimeInterval(-300), source: "")))
     // HID++ DPI lists: explicit values, and 0xE0xx step markers that expand up to the next value.
     precondition(LogitechDevice.parseDPIList([0x01, 0x90, 0x03, 0x20, 0x06, 0x40, 0x00, 0x00]) == [400, 800, 1600])
     precondition(LogitechDevice.parseDPIList([0x01, 0x90, 0xE1, 0x90, 0x06, 0x40, 0x00, 0x00]) == [400, 800, 1200, 1600])

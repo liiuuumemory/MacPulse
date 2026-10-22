@@ -3,36 +3,59 @@ import SwiftUI
 import CoreText
 import UniformTypeIdentifiers
 
-/// How one menu bar widget draws its metric. Charts read the two-minute history.
+/// How a widget writes its metric: one line, two metrics stacked, a caption over a larger value, or no text (graphic only).
 enum WidgetStyle: String, CaseIterable, Codable, Identifiable {
-    case text, stacked, mini, line, bar, ring, battery
+    case text, stacked, mini, hidden
     var id: String { rawValue }
     var name: String {
         switch self {
         case .text: return "文字"
         case .stacked: return "双行"
         case .mini: return "迷你"
+        case .hidden: return "不显示"
+        }
+    }
+}
+
+/// Optional graphic drawn left of a widget's text. Charts read the two-minute history.
+enum WidgetChart: String, CaseIterable, Codable, Identifiable {
+    case none, line, bar, ring, battery
+    var id: String { rawValue }
+    var name: String {
+        switch self {
+        case .none: return "无"
         case .line: return "折线"
         case .bar: return "柱状"
         case .ring: return "环形"
         case .battery: return "电池"
         }
     }
-    var isChart: Bool { self == .line || self == .bar || self == .ring || self == .battery }
-    func supports(_ metric: MenuMetric) -> Bool {
+    var width: CGFloat {
         switch self {
-        case .line, .bar: return metric.hasHistory
-        case .ring, .battery: return metric.isPercent
-        default: return true
+        case .none: return 0
+        case .ring: return 15
+        case .battery: return 24
+        case .line, .bar: return 30
         }
     }
+    func supports(_ metric: MenuMetric) -> Bool {
+        switch self {
+        case .none: return true
+        case .line, .bar: return metric.hasHistory
+        case .ring, .battery: return metric.isPercent
+        }
+    }
+    /// A custom color tints only the value graphic (line, bars, arc); text, labels and frames follow the menu bar,
+    /// and the battery keeps its own state colors.
+    var takesColor: Bool { self == .line || self == .bar || self == .ring }
 }
 
-/// One independently styled item in the menu bar.
+/// One independently styled item in the menu bar: text in one of the styles, with an optional graphic on its left.
 struct MenuWidget: Identifiable, Codable, Equatable {
     var id = UUID()
     var enabled = true
     var style: WidgetStyle = .text
+    var chart: WidgetChart = .none
     var metric: String
     var secondary = "none"
     var labelMode = "text"
@@ -41,16 +64,27 @@ struct MenuWidget: Identifiable, Codable, Equatable {
     var symbol = ""
     var secondarySymbol = ""
     var color = "system"
-    var showValue = true
-    init(_ style: WidgetStyle, _ metric: String, _ secondary: String = "none", labelMode: String = "text", color: String = "system") {
-        self.style = style; self.metric = metric; self.secondary = secondary; self.labelMode = labelMode; self.color = color
+    init(_ style: WidgetStyle, _ metric: String, _ secondary: String = "none", labelMode: String = "text", color: String = "system", chart: WidgetChart = .none) {
+        self.style = style; self.metric = metric; self.secondary = secondary; self.labelMode = labelMode; self.color = color; self.chart = chart
     }
+    /// Before 2.1 a chart was a style of its own, with a separate "show value" switch.
+    private enum LegacyKeys: String, CodingKey { case showValue }
+    /// True when the widget was saved as a chart style; lets the configuration merge old chart + text pairs once.
+    static func isLegacyChart(_ style: String) -> Bool { WidgetChart(rawValue: style).map { $0 != .none } ?? false }
     // Missing keys fall back to defaults so later fields never reset saved widgets.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
-        style = (try? c.decodeIfPresent(WidgetStyle.self, forKey: .style)) ?? .text
+        let savedStyle = (try? c.decodeIfPresent(String.self, forKey: .style)) ?? "text"
+        if Self.isLegacyChart(savedStyle), let old = WidgetChart(rawValue: savedStyle) {
+            chart = old
+            let showValue = try decoder.container(keyedBy: LegacyKeys.self).decodeIfPresent(Bool.self, forKey: .showValue) ?? true
+            style = showValue ? .text : .hidden
+        } else {
+            style = WidgetStyle(rawValue: savedStyle) ?? .text
+            chart = (try? c.decodeIfPresent(WidgetChart.self, forKey: .chart)) ?? .none
+        }
         metric = try c.decodeIfPresent(String.self, forKey: .metric) ?? "cpu"
         secondary = try c.decodeIfPresent(String.self, forKey: .secondary) ?? "none"
         labelMode = try c.decodeIfPresent(String.self, forKey: .labelMode) ?? "text"
@@ -59,7 +93,6 @@ struct MenuWidget: Identifiable, Codable, Equatable {
         symbol = try c.decodeIfPresent(String.self, forKey: .symbol) ?? ""
         secondarySymbol = try c.decodeIfPresent(String.self, forKey: .secondarySymbol) ?? ""
         color = try c.decodeIfPresent(String.self, forKey: .color) ?? "system"
-        showValue = try c.decodeIfPresent(Bool.self, forKey: .showValue) ?? true
     }
 }
 
@@ -137,6 +170,9 @@ struct MenuConfiguration: Codable, Equatable {
         rateUnit = try c.decodeIfPresent(String.self, forKey: .rateUnit) ?? "bytes"
         if let saved = try c.decodeIfPresent([MenuWidget].self, forKey: .widgets) {
             widgets = saved
+            // Saved before 2.1: a value-less chart followed by a text widget for the same metric becomes one widget.
+            let styles = (try? c.decodeIfPresent([StyleProbe].self, forKey: .widgets)) ?? []
+            if styles.contains(where: { MenuWidget.isLegacyChart($0.style ?? "") }) { widgets = Self.mergingChartPairs(widgets) }
         } else if let columns = try c.decodeIfPresent([LegacyMenuColumn].self, forKey: .columns) {
             let single = (try c.decodeIfPresent(String.self, forKey: .layout)) == "single"
             let mode = (try c.decodeIfPresent(Bool.self, forKey: .showLabels) ?? true) ? "text" : "none"
@@ -156,6 +192,25 @@ struct MenuConfiguration: Codable, Equatable {
                 return rows.map { widget(.text, $0) }
             }
         }
+    }
+    private struct StyleProbe: Decodable { var style: String? }
+    /// Joins a graphic-only widget with the text widget right after it when both show the same metric.
+    static func mergingChartPairs(_ widgets: [MenuWidget]) -> [MenuWidget] {
+        var result: [MenuWidget] = []
+        var index = 0
+        while index < widgets.count {
+            let first = widgets[index]
+            if first.style == .hidden, first.chart != .none, index + 1 < widgets.count {
+                let next = widgets[index + 1]
+                if next.chart == .none, next.style == .text || next.style == .mini, next.metric == first.metric, next.enabled == first.enabled {
+                    var merged = next
+                    merged.chart = first.chart; merged.color = first.color
+                    result.append(merged); index += 2; continue
+                }
+            }
+            result.append(first); index += 1
+        }
+        return result
     }
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -183,8 +238,16 @@ struct MenuConfiguration: Codable, Equatable {
     static var charts: Self {
         var c = Self()
         c.widthMode = "fit"; c.alignment = "left"; c.separators = true; c.icon = "waveform.path.ecg"
-        c.widgets = [MenuWidget(.bar, "cpu", labelMode: "none", color: "blue"), MenuWidget(.ring, "memory", labelMode: "none", color: "green"),
-                     MenuWidget(.stacked, "upload", "download"), MenuWidget(.mini, "cpuTemp")]
+        c.widgets = [MenuWidget(.mini, "cpu", color: "blue", chart: .bar), MenuWidget(.mini, "memory", color: "green", chart: .ring),
+                     MenuWidget(.mini, "power", color: "orange", chart: .line), MenuWidget(.stacked, "upload", "download")]
+        return c
+    }
+    static var quota: Self {
+        var c = Self()
+        c.widthMode = "fit"; c.alignment = "left"; c.iconPosition = "trailing"
+        c.widgets = [MenuWidget(.mini, "claudeQuota", color: "orange", chart: .ring), MenuWidget(.mini, "codexQuota", color: "teal", chart: .ring),
+                     MenuWidget(.mini, "peripheral", chart: .battery), MenuWidget(.mini, "power", color: "green", chart: .line),
+                     MenuWidget(.stacked, "upload", "download")]
         return c
     }
     static var symbols: Self {
@@ -197,7 +260,7 @@ struct MenuConfiguration: Codable, Equatable {
     }
     static let presets: [(id: String, name: String, value: Self)] = [
         ("reference", "参考布局", .reference), ("compact", "简洁", .compact), ("performance", "性能", .performance),
-        ("charts", "图表", .charts), ("symbols", "图标", .symbols)
+        ("charts", "图表", .charts), ("quota", "额度与外设", .quota), ("symbols", "图标", .symbols)
     ]
 
     /// Same arrangement and look; widget ids differ between a preset and the copy applied from it.
@@ -224,7 +287,9 @@ struct MenuConfiguration: Codable, Equatable {
             var w = widget
             if MenuMetric.find(w.metric) == nil || w.metric == "none" { w.metric = "cpu" }
             if MenuMetric.find(w.secondary) == nil { w.secondary = "none" }
-            if !w.style.supports(MenuMetric.find(w.metric)!) { w.style = .text }
+            // A graphic shows one metric, so two stacked metrics carry none; graphic-only needs a graphic.
+            if w.style == .stacked || !w.chart.supports(MenuMetric.find(w.metric)!) { w.chart = .none }
+            if w.style == .hidden && w.chart == .none { w.style = .text }
             if !["text", "symbol", "none"].contains(w.labelMode) { w.labelMode = "text" }
             w.label = String(w.label.prefix(8)); w.secondaryLabel = String(w.secondaryLabel.prefix(8))
             if !w.symbol.isEmpty && !MenuSymbols.exists(w.symbol) { w.symbol = "" }
@@ -415,7 +480,7 @@ struct MenuBarLayout {
     var height: CGFloat
     var config: MenuConfiguration
     var showsIcon: Bool
-    var hasCharts: Bool { items.contains { $0.widget.style.isChart } }
+    var hasCharts: Bool { items.contains { $0.widget.chart != .none } }
 
     static func numberFont(_ size: CGFloat) -> NSFont { .monospacedDigitSystemFont(ofSize: size, weight: .medium) }
     static func textFont(_ size: CGFloat) -> NSFont { .monospacedSystemFont(ofSize: size, weight: .regular) }
@@ -453,7 +518,7 @@ struct MenuBarLayout {
         let base = CGFloat(c.fontSize)
         items = c.widgets.filter(\.enabled).compactMap { w in
             var lines: [Line] = []
-            var chartWidth: CGFloat = 0
+            let chartWidth = w.chart.width
             switch w.style {
             case .text:
                 lines = [line(w.metric, custom: w.label, symbol: w.symbol, mode: w.labelMode, size: base)].compactMap { $0 }
@@ -470,12 +535,11 @@ struct MenuBarLayout {
                 if w.labelMode == "symbol" { l.symbol = w.symbol.isEmpty ? l.metric.symbol : w.symbol; l.labelWidth = 8 }
                 l.labelFont = caption
                 lines = [l]
-            case .line, .bar, .ring, .battery:
-                chartWidth = w.style == .ring ? 15 : w.style == .battery ? 24 : 30
-                if w.showValue { lines = [line(w.metric, custom: w.label, symbol: w.symbol, mode: w.labelMode, size: base)].compactMap { $0 } }
+            case .hidden:
+                break
             }
             if lines.isEmpty && chartWidth == 0 { return nil }
-            let textWidth: CGFloat = w.style == .mini ? max(lines[0].labelWidth, lines[0].valueWidth) : lines.map(\.width).max() ?? 0
+            let textWidth: CGFloat = w.style == .mini ? lines.first.map { max($0.labelWidth, $0.valueWidth) } ?? 0 : lines.map(\.width).max() ?? 0
             let width = chartWidth + (chartWidth > 0 && textWidth > 0 ? Self.chartGap : 0) + textWidth
             return Item(widget: w, lines: lines, chartWidth: chartWidth, width: width)
         }
@@ -499,16 +563,29 @@ struct MenuBarLayout {
         // Values affect only alignment inside each fixed slot, never its width.
         let strings = items.map { $0.lines.map { $0.metric.displayValue(monitor, config: config) } }
         let metrics = items.map { MenuMetric.find($0.widget.metric)! }
-        let series = zip(items, metrics).map { item, metric in item.widget.style == .line || item.widget.style == .bar ? metric.series(monitor) : [] }
+        let series = zip(items, metrics).map { item, metric in item.widget.chart == .line || item.widget.chart == .bar ? metric.series(monitor) : [] }
         let fractions = metrics.map { $0.fraction(monitor) }
         let cores = monitor.sample.cores
         let charging = monitor.sample.charging
         let peripheralCharging = MenuMetric.lowestPeripheral(monitor)?.charging ?? false
-        let monochrome = items.allSatisfy { $0.widget.color == "system" }
+        /// Battery-style system and accessory batteries: charging and low (under 20%, not charging) states.
+        let batteryCharging = items.map { ($0.widget.metric == "battery" && charging) || ($0.widget.metric == "peripheral" && peripheralCharging) }
+        let batteryFill: [NSColor?] = items.indices.map { i in
+            let w = items[i].widget
+            guard w.chart == .battery, w.metric == "battery" || w.metric == "peripheral" else { return nil }
+            if batteryCharging[i] { return .systemGreen }
+            return (fractions[i] ?? 1) < 0.2 ? .systemRed : nil
+        }
+        // A template image lets the system color it; any custom or state color needs a full-color image.
+        let monochrome = items.allSatisfy { $0.widget.color == "system" || !$0.widget.chart.takesColor } && batteryFill.allSatisfy { $0 == nil }
         let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             let height = self.height
             func tint(_ name: String) -> NSColor { monochrome ? .black : MenuSymbols.nsColor(name) }
+            let foreground = tint("system")
+            func rounded(_ rect: CGRect, _ radius: CGFloat) -> CGPath {
+                CGPath(roundedRect: rect, cornerWidth: min(radius, rect.width / 2), cornerHeight: min(radius, rect.height / 2), transform: nil)
+            }
             // Both fonts share an explicit baseline; bounding-box origins differ between SF Mono and SF Pro digits.
             func text(_ string: String, font: NSFont, color: NSColor, x: CGFloat, width slot: CGFloat, y: CGFloat, lineHeight: CGFloat, baselineFonts: [NSFont], right: Bool) {
                 var line = CTLineCreateWithAttributedString(NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color]))
@@ -551,15 +628,15 @@ struct MenuBarLayout {
             var x: CGFloat = 4
             func appIcon() {
                 let name = config.icon == "none" ? "waveform.path.ecg" : config.icon
-                symbol(name, in: NSRect(x: x, y: (height - 15) / 2, width: 15, height: 15), color: tint("system"))
+                symbol(name, in: NSRect(x: x, y: (height - 15) / 2, width: 15, height: 15), color: foreground)
                 x += 20
             }
             if showsIcon && (config.iconPosition == "leading" || items.isEmpty) { appIcon() }
             for (index, item) in items.enumerated() {
-                let color = tint(item.widget.color)
                 let w = item.widget
+                let color = w.chart.takesColor ? tint(w.color) : foreground
                 let chart = NSRect(x: x, y: 3, width: item.chartWidth, height: height - 6)
-                switch w.style {
+                switch w.chart {
                 case .line:
                     let values = series[index]
                     let top = metrics[index].chartMax ?? max(1, (values.compactMap { $0 }.max() ?? 1) * 1.15)
@@ -569,33 +646,42 @@ struct MenuBarLayout {
                         guard let value, value.isFinite else { continue }
                         points.append(CGPoint(x: chart.minX + chart.width * CGFloat(i) / CGFloat(count - 1), y: chart.minY + chart.height * CGFloat(min(1, max(0, value / top)))))
                     }
-                    context.setFillColor(color.withAlphaComponent(0.12).cgColor)
-                    context.fill(chart)
+                    let frame = rounded(chart, 3)
+                    context.addPath(frame); context.setFillColor(foreground.withAlphaComponent(0.12).cgColor); context.fillPath()
                     if points.count > 1 {
                         let path = CGMutablePath(); path.addLines(between: points)
                         let area = path.mutableCopy()!
                         area.addLine(to: CGPoint(x: points.last!.x, y: chart.minY)); area.addLine(to: CGPoint(x: points[0].x, y: chart.minY)); area.closeSubpath()
+                        context.saveGState()
+                        context.addPath(frame); context.clip()
                         context.addPath(area); context.setFillColor(color.withAlphaComponent(0.3).cgColor); context.fillPath()
-                        context.addPath(path); context.setStrokeColor(color.cgColor); context.setLineWidth(1.2); context.setLineJoin(.round); context.strokePath()
+                        context.addPath(path); context.setStrokeColor(color.cgColor); context.setLineWidth(1.2)
+                        context.setLineJoin(.round); context.setLineCap(.round); context.strokePath()
+                        context.restoreGState()
                     }
                 case .bar:
                     // CPU shows one bar per core; other metrics show their recent history.
                     let values: [Double?] = w.metric == "cpu" && !cores.isEmpty ? cores.map { Optional($0) } : Array(series[index].suffix(10))
                     let top = metrics[index].chartMax ?? max(1, (values.compactMap { $0 }.max() ?? 1) * 1.15)
-                    context.setFillColor(color.withAlphaComponent(0.12).cgColor)
-                    context.fill(chart)
+                    let frame = rounded(chart, 3)
+                    context.addPath(frame); context.setFillColor(foreground.withAlphaComponent(0.12).cgColor); context.fillPath()
                     let n = CGFloat(max(1, values.count))
                     let barWidth = max(1, (chart.width - (n - 1)) / n)
+                    context.saveGState()
+                    context.addPath(frame); context.clip()
                     context.setFillColor(color.cgColor)
                     for (i, value) in values.enumerated() {
                         guard let value, value.isFinite else { continue }
                         let h = max(1, chart.height * CGFloat(min(1, max(0, value / top))))
-                        context.fill(CGRect(x: chart.minX + CGFloat(i) * (barWidth + 1), y: chart.minY, width: barWidth, height: h))
+                        // Bars stand on the frame's floor; rounding the tops keeps thin bars soft.
+                        let bar = CGRect(x: chart.minX + CGFloat(i) * (barWidth + 1), y: chart.minY - 2, width: barWidth, height: h + 2)
+                        context.addPath(rounded(bar, min(1.5, barWidth / 2))); context.fillPath()
                     }
+                    context.restoreGState()
                 case .ring:
                     let center = CGPoint(x: chart.midX, y: height / 2), radius: CGFloat = 6
                     context.setLineWidth(2.5)
-                    context.setStrokeColor(color.withAlphaComponent(0.25).cgColor)
+                    context.setStrokeColor(foreground.withAlphaComponent(0.25).cgColor)
                     context.addArc(center: center, radius: radius, startAngle: 0, endAngle: .pi * 2, clockwise: false); context.strokePath()
                     if let fraction = fractions[index], fraction > 0 {
                         context.setStrokeColor(color.cgColor); context.setLineCap(.round)
@@ -603,48 +689,56 @@ struct MenuBarLayout {
                         context.strokePath()
                     }
                 case .battery:
+                    // The menu bar's own color, green while charging, red when low.
                     let body = CGRect(x: chart.minX + 0.5, y: height / 2 - 5.5, width: 20, height: 11)
-                    context.setStrokeColor(color.withAlphaComponent(0.6).cgColor); context.setLineWidth(1)
-                    context.addPath(CGPath(roundedRect: body, cornerWidth: 3, cornerHeight: 3, transform: nil)); context.strokePath()
-                    context.setFillColor(color.withAlphaComponent(0.6).cgColor)
-                    context.fill(CGRect(x: body.maxX + 1, y: height / 2 - 2, width: 1.5, height: 4))
+                    context.setStrokeColor(foreground.withAlphaComponent(0.55).cgColor); context.setLineWidth(1)
+                    context.addPath(rounded(body, 3.5)); context.strokePath()
+                    context.addPath(rounded(CGRect(x: body.maxX + 1, y: height / 2 - 2, width: 1.8, height: 4), 0.9))
+                    context.setFillColor(foreground.withAlphaComponent(0.55).cgColor); context.fillPath()
                     if let fraction = fractions[index] {
-                        let low = fraction < 0.2 && !monochrome && w.color == "system"
-                        context.setFillColor((low ? NSColor.systemRed : color).cgColor)
                         let inner = body.insetBy(dx: 2, dy: 2)
-                        context.addPath(CGPath(roundedRect: CGRect(x: inner.minX, y: inner.minY, width: max(1, inner.width * CGFloat(fraction)), height: inner.height),
-                                               cornerWidth: 1.5, cornerHeight: 1.5, transform: nil))
-                        context.fillPath()
+                        context.addPath(rounded(CGRect(x: inner.minX, y: inner.minY, width: max(1.5, inner.width * CGFloat(fraction)), height: inner.height), 2))
+                        context.setFillColor((batteryFill[index] ?? foreground).cgColor); context.fillPath()
                     }
-                    if (w.metric == "battery" && charging) || (w.metric == "peripheral" && peripheralCharging) {
-                        symbol("bolt.fill", in: NSRect(x: body.midX - 4, y: body.minY + 1, width: 8, height: 9), color: monochrome ? .black : .labelColor)
+                    if batteryCharging[index] {
+                        // A white bolt with a soft dark outline reads on green in both appearances.
+                        let b = CGRect(x: body.midX - 3.4, y: body.midY - 5, width: 6.8, height: 10)
+                        let bolt = CGMutablePath()
+                        bolt.addLines(between: [CGPoint(x: b.minX + 0.62 * b.width, y: b.maxY), CGPoint(x: b.minX, y: b.minY + 0.43 * b.height),
+                                                CGPoint(x: b.minX + 0.42 * b.width, y: b.minY + 0.43 * b.height), CGPoint(x: b.minX + 0.36 * b.width, y: b.minY),
+                                                CGPoint(x: b.maxX, y: b.minY + 0.58 * b.height), CGPoint(x: b.minX + 0.58 * b.width, y: b.minY + 0.58 * b.height)])
+                        bolt.closeSubpath()
+                        context.setLineJoin(.round)
+                        context.addPath(bolt); context.setStrokeColor(NSColor.black.withAlphaComponent(0.55).cgColor); context.setLineWidth(1.6); context.strokePath()
+                        context.addPath(bolt); context.setFillColor(NSColor.white.cgColor); context.fillPath()
+                        context.addPath(bolt); context.setStrokeColor(NSColor.white.cgColor); context.setLineWidth(0.5); context.strokePath()
                     }
-                default: break
+                case .none: break
                 }
                 let textX = x + item.chartWidth + (item.chartWidth > 0 ? Self.chartGap : 0)
                 let slot = item.width - (textX - x)
                 if w.style == .mini, let line = item.lines.first {
                     // Caption in the top third, value below.
-                    if let name = line.symbol { symbol(name, in: NSRect(x: textX, y: 13, width: 8, height: 8), color: color.withAlphaComponent(0.75)) }
+                    if let name = line.symbol { symbol(name, in: NSRect(x: textX, y: 13, width: 8, height: 8), color: foreground.withAlphaComponent(0.75)) }
                     else if !line.label.isEmpty {
-                        text(line.label, font: line.labelFont, color: color.withAlphaComponent(0.75), x: textX, width: slot, y: 12, lineHeight: 10, baselineFonts: [line.labelFont], right: false)
+                        text(line.label, font: line.labelFont, color: foreground.withAlphaComponent(0.75), x: textX, width: slot, y: 12, lineHeight: 10, baselineFonts: [line.labelFont], right: false)
                     }
                     let captioned = line.symbol != nil || !line.label.isEmpty
                     let left = config.alignment == "left"
-                    text(strings[index][0], font: line.valueFont, color: color, x: left ? textX : textX + slot - line.valueWidth, width: left ? slot : line.valueWidth,
+                    text(strings[index][0], font: line.valueFont, color: foreground, x: left ? textX : textX + slot - line.valueWidth, width: left ? slot : line.valueWidth,
                          y: 0, lineHeight: captioned ? 13 : height, baselineFonts: [line.valueFont], right: !left)
                 } else if item.lines.count == 2 {
                     for (row, line) in item.lines.enumerated() {
-                        draw(line, value: strings[index][row], x: textX, width: slot, y: height - CGFloat(row + 1) * height / 2, lineHeight: height / 2, color: color)
+                        draw(line, value: strings[index][row], x: textX, width: slot, y: height - CGFloat(row + 1) * height / 2, lineHeight: height / 2, color: foreground)
                     }
                 } else if let line = item.lines.first {
-                    draw(line, value: strings[index][0], x: textX, width: slot, y: 0, lineHeight: height, color: color)
+                    draw(line, value: strings[index][0], x: textX, width: slot, y: 0, lineHeight: height, color: foreground)
                 }
                 x += item.width
                 if index < items.count - 1 {
                     if config.separators {
-                        context.setFillColor(tint("system").withAlphaComponent(0.3).cgColor)
-                        context.fill(CGRect(x: x + CGFloat(config.spacing) / 2 - 0.5, y: 4, width: 1, height: height - 8))
+                        context.addPath(rounded(CGRect(x: x + CGFloat(config.spacing) / 2 - 0.5, y: 4, width: 1, height: height - 8), 0.5))
+                        context.setFillColor(foreground.withAlphaComponent(0.3).cgColor); context.fillPath()
                     }
                     x += CGFloat(config.spacing)
                 }
@@ -834,27 +928,13 @@ struct MenuBarEditor: View {
     @ViewBuilder private func widgetEditor(_ widget: Binding<MenuWidget>) -> some View {
         let w = widget.wrappedValue
         let metric = MenuMetric.find(w.metric) ?? MenuMetric.find("cpu")!
-        PreferenceField(title: "样式") {
-            // Flexible columns: seven fixed tiles were wider than a narrow window and pushed the page sideways.
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 48), spacing: 6), count: WidgetStyle.allCases.count), spacing: 6) {
-                ForEach(WidgetStyle.allCases) { style in
-                    let supported = style.supports(metric)
-                    Button { if supported { setStyle(widget, style) } } label: {
-                        VStack(spacing: 4) {
-                            WidgetThumbnail(monitor: monitor, widget: thumbnail(w, style), config: monitor.menuConfiguration, fit: true)
-                                .frame(maxWidth: 70).frame(height: 22).padding(.horizontal, 4)
-                            Text(style.name).font(.subheadline).lineLimit(1)
-                        }
-                        .frame(maxWidth: .infinity).frame(height: 50)
-                        .background(w.style == style ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
-                        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(w.style == style ? Color.accentColor : .clear, lineWidth: 1.5))
-                        .opacity(supported ? 1 : 0.35)
-                        .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                        .help(supported ? style.name : style == .ring || style == .battery ? "仅适用于百分比类指标" : "此指标没有历史曲线")
-                        .accessibilityLabel(style.name).accessibilityAddTraits(w.style == style ? .isSelected : [])
-                }
-            }
+        let charts = WidgetChart.allCases.filter { $0 != .none }
+        // Step 1: how the text reads. Graphic-only needs a graphic this metric can draw.
+        PreferenceField(title: "文字格式") {
+            tileRow(WidgetStyle.allCases, selected: w.style, name: \.name,
+                    enabled: { $0 != .hidden || charts.contains { $0.supports(metric) } },
+                    disabledHelp: "这个指标没有可用的图形",
+                    preview: { styled(w, $0) }) { setStyle(widget, $0) }
         }
         HStack(alignment: .top, spacing: 16) {
             PreferenceField(title: w.style == .stacked ? "上行指标" : "指标") {
@@ -868,37 +948,69 @@ struct MenuBarEditor: View {
                         ForEach(MenuMetric.all) { Text($0.name).tag($0.id) }
                     }.fixedSize()
                 }
-            } else if w.style.isChart {
-                // Outside PreferenceField, which hides control labels; this checkbox needs its text.
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("数值").font(.callout).foregroundStyle(.secondary)
-                    Toggle("在图形旁显示数值", isOn: widget.showValue).toggleStyle(.checkbox)
-                }.frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        HStack(alignment: .top, spacing: 16) {
-            PreferenceField(title: "标签") {
-                Picker("标签", selection: widget.labelMode) {
-                    Text("文字").tag("text"); Text("图标").tag("symbol"); Text("不显示").tag("none")
-                }.pickerStyle(.segmented).frame(width: 190)
-            }
-            if w.labelMode == "text" {
-                PreferenceField(title: w.style == .stacked ? "自定义文字（上 / 下）" : "自定义文字") {
-                    HStack(spacing: 6) {
-                        labelField(widget.label, placeholder: metric.label)
-                        if w.style == .stacked { labelField(widget.secondaryLabel, placeholder: MenuMetric.find(w.secondary)?.label ?? "") }
-                    }
+        if w.style != .hidden {
+            HStack(alignment: .top, spacing: 16) {
+                PreferenceField(title: "标签") {
+                    Picker("标签", selection: widget.labelMode) {
+                        Text("文字").tag("text"); Text("图标").tag("symbol"); Text("不显示").tag("none")
+                    }.pickerStyle(.segmented).frame(width: 190)
                 }
-            } else if w.labelMode == "symbol" {
-                PreferenceField(title: w.style == .stacked ? "图标（上 / 下）" : "图标") {
-                    HStack(spacing: 6) {
-                        SymbolMenu(selection: widget.symbol, fallback: metric.symbol)
-                        if w.style == .stacked { SymbolMenu(selection: widget.secondarySymbol, fallback: MenuMetric.find(w.secondary)?.symbol ?? "circle") }
+                if w.labelMode == "text" {
+                    PreferenceField(title: w.style == .stacked ? "自定义文字（上 / 下）" : "自定义文字") {
+                        HStack(spacing: 6) {
+                            labelField(widget.label, placeholder: metric.label)
+                            if w.style == .stacked { labelField(widget.secondaryLabel, placeholder: MenuMetric.find(w.secondary)?.label ?? "") }
+                        }
+                    }
+                } else if w.labelMode == "symbol" {
+                    PreferenceField(title: w.style == .stacked ? "图标（上 / 下）" : "图标") {
+                        HStack(spacing: 6) {
+                            SymbolMenu(selection: widget.symbol, fallback: metric.symbol)
+                            if w.style == .stacked { SymbolMenu(selection: widget.secondarySymbol, fallback: MenuMetric.find(w.secondary)?.symbol ?? "circle") }
+                        }
                     }
                 }
             }
         }
-        PreferenceField(title: "颜色") {
+        Divider()
+        // Step 2: an optional graphic on the left of the text.
+        PreferenceField(title: "统计图形") {
+            if w.style == .stacked {
+                Text("双行显示两项不同数据，图形无法对应其中一项，所以不能添加。")
+                    .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else if w.chart == .none {
+                Menu {
+                    ForEach(charts) { chart in
+                        Button(chart.name) { widget.wrappedValue.chart = chart }.disabled(!chart.supports(metric))
+                    }
+                } label: { Label("添加图形", systemImage: "plus") }
+                    .fixedSize()
+                    .disabled(!charts.contains { $0.supports(metric) })
+                    .help(charts.contains { $0.supports(metric) } ? "在文字左侧加一个图形" : "这个指标没有可用的图形")
+            } else {
+                HStack(alignment: .center, spacing: 10) {
+                    tileRow(charts, selected: w.chart, name: \.name, enabled: { $0.supports(metric) },
+                            disabledHelp: "环形和电池仅适用于百分比类指标，折线和柱状需要有历史曲线的指标",
+                            preview: { chart in
+                                // A graphic this metric can't draw is shown with CPU data, dimmed, so its shape still reads.
+                                var copy = w; copy.chart = chart; copy.style = .hidden
+                                if !chart.supports(metric) { copy.metric = "cpu" }
+                                return copy
+                            }) { widget.wrappedValue.chart = $0 }
+                    Button { widget.wrappedValue.chart = .none } label: { Image(systemName: "trash") }
+                        .buttonStyle(.borderless).disabled(w.style == .hidden)
+                        .help(w.style == .hidden ? "文字格式为“不显示”时必须保留图形" : "移除图形").accessibilityLabel("移除图形")
+                }
+            }
+        }
+        if w.chart == .battery && (w.metric == "battery" || w.metric == "peripheral") {
+            Text("电池平时跟随菜单栏颜色，充电时变绿并显示闪电，电量低于 20% 时变红。")
+                .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        // Only the value graphic takes a color; text and battery states follow the menu bar.
+        if w.chart.takesColor { PreferenceField(title: "数值图形颜色") {
             HStack(spacing: 8) {
                 ForEach(MenuSymbols.colors, id: \.self) { name in
                     Button { widget.wrappedValue.color = name } label: {
@@ -909,6 +1021,31 @@ struct MenuBarEditor: View {
                             .overlay(Circle().strokeBorder(w.color == name ? Color.accentColor : .clear, lineWidth: 2))
                     }.buttonStyle(.plain).help(name == "system" ? "跟随系统" : name).accessibilityLabel(name == "system" ? "跟随系统颜色" : name)
                 }
+            }
+        } }
+    }
+
+    /// A row of live-preview tiles; flexible columns keep it inside a narrow window.
+    private func tileRow<Option: Identifiable & Equatable>(_ options: [Option], selected: Option, name: KeyPath<Option, String>,
+                                                          enabled: @escaping (Option) -> Bool, disabledHelp: String,
+                                                          preview: @escaping (Option) -> MenuWidget, choose: @escaping (Option) -> Void) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 48), spacing: 6), count: options.count), spacing: 6) {
+            ForEach(options) { option in
+                let on = enabled(option)
+                Button { if on { choose(option) } } label: {
+                    VStack(spacing: 4) {
+                        WidgetThumbnail(monitor: monitor, widget: preview(option), config: monitor.menuConfiguration, fit: true)
+                            .frame(maxWidth: 70).frame(height: 22).padding(.horizontal, 4)
+                        Text(option[keyPath: name]).font(.subheadline).lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 50)
+                    .background(option == selected ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(option == selected ? Color.accentColor : .clear, lineWidth: 1.5))
+                    .opacity(on ? 1 : 0.35)
+                    .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                    .help(on ? option[keyPath: name] : disabledHelp)
+                    .accessibilityLabel(option[keyPath: name]).accessibilityAddTraits(option == selected ? .isSelected : [])
             }
         }
     }
@@ -925,17 +1062,18 @@ struct MenuBarEditor: View {
     private func toggle(_ id: UUID) {
         if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
     }
-    /// The widget as it would look in another style; stacked needs a second metric.
+    /// The widget as it would look in another text style: stacked needs a second metric and drops the graphic,
+    /// graphic-only needs one.
     private func styled(_ w: MenuWidget, _ style: WidgetStyle) -> MenuWidget {
         var copy = w
         copy.style = style
-        if style == .stacked && copy.secondary == "none" { copy.secondary = copy.metric == "upload" ? "download" : "memory" }
-        return copy
-    }
-    /// Style choices preview the chart alone so every option fits its tile.
-    private func thumbnail(_ w: MenuWidget, _ style: WidgetStyle) -> MenuWidget {
-        var copy = styled(w, style)
-        if style.isChart { copy.labelMode = "none" }
+        if style == .stacked {
+            copy.chart = .none
+            if copy.secondary == "none" { copy.secondary = copy.metric == "upload" ? "download" : "memory" }
+        }
+        if style == .hidden && copy.chart == .none, let metric = MenuMetric.find(copy.metric) {
+            copy.chart = [WidgetChart.ring, .line, .bar, .battery].first { $0.supports(metric) } ?? .none
+        }
         return copy
     }
     private func setStyle(_ widget: Binding<MenuWidget>, _ style: WidgetStyle) {
@@ -944,11 +1082,13 @@ struct MenuBarEditor: View {
     private func setMetric(_ widget: Binding<MenuWidget>, _ id: String) {
         widget.wrappedValue.metric = id
         widget.wrappedValue.symbol = ""
-        if let metric = MenuMetric.find(id), !widget.wrappedValue.style.supports(metric) { widget.wrappedValue.style = .text }
+        guard let metric = MenuMetric.find(id), !widget.wrappedValue.chart.supports(metric) else { return }
+        widget.wrappedValue.chart = .none
+        if widget.wrappedValue.style == .hidden { widget.wrappedValue.style = .text }
     }
     private func add(_ metric: String) {
         var w = MenuWidget(metric == "upload" ? .stacked : .text, metric, metric == "upload" ? "download" : "none")
-        if metric == "battery" { w.style = .battery }
+        if metric == "battery" || metric == "peripheral" { w.chart = .battery }
         monitor.menuConfiguration.widgets.append(w)
         expanded.insert(w.id)
     }

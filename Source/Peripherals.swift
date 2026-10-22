@@ -4,7 +4,7 @@ import IOKit.hid
 
 struct PeripheralBattery: Identifiable, Equatable {
     var id: String { key }
-    /// Stable identity: "wl-<pid>", "logi-<device>" or "bt-<name>"; lets views join battery with settings.
+    /// Stable identity: "wl-<receiver pid>" (`WLMouseModel.batteryKey`), "logi-<device>" or "bt-<name>"; lets views join battery with settings.
     let key: String
     let name: String
     let percent: Double
@@ -14,6 +14,10 @@ struct PeripheralBattery: Identifiable, Equatable {
     var isKeyboard: Bool { name.localizedCaseInsensitiveContains("keyboard") || name.contains("键盘") }
     var symbol: String { isKeyboard ? "keyboard" : name.localizedCaseInsensitiveContains("trackpad") ? "rectangle.and.hand.point.up.left" : "computermouse" }
     var stale: Bool { Date().timeIntervalSince(updated) > 120 }
+    /// Same device, level and charge state; a newer timestamp alone is not worth redrawing for.
+    func sameReading(as other: PeripheralBattery) -> Bool {
+        key == other.key && name == other.name && percent == other.percent && charging == other.charging && stale == other.stale
+    }
 }
 
 /// One stored battery reading; the history feeds the panel's 7-day curve and the runtime estimate.
@@ -53,8 +57,9 @@ enum BatteryHistory {
 enum PeripheralReader {
     static let wlmouseVendor = 0x36a7
 
+    /// The slow sources, read once a minute; WLMOUSE has its own one-second check (`WLMouseWatcher.read`).
     static func read(now: Date = Date()) -> [PeripheralBattery] {
-        registryBatteries(now: now) + wlmouseBatteries(now: now) + logitechBatteries(now: now)
+        registryBatteries(now: now) + logitechBatteries(now: now)
     }
 
     // Probing receiver slots is slow, so the Logitech device list is refreshed every ten minutes.
@@ -106,11 +111,61 @@ enum PeripheralReader {
         return result
     }
 
-    private static func wlmouseBatteries(now: Date) -> [PeripheralBattery] {
-        WLMouseChannel.find().compactMap { channel in
-            guard let value = (try? channel.withOpen { try channel.battery() }) ?? nil else { return nil }
-            let name = channel.model?.name ?? displayName(channel.product)
-            return PeripheralBattery(key: "wl-\(channel.productID)", name: name, percent: Double(value.percent), charging: value.charging, updated: now, source: "WLMOUSE 接收器")
+    /// nil while the mouse sleeps (the receiver answers 0); throws when the receiver does not answer at all.
+    static func wlmouseBattery(_ channel: WLMouseChannel, now: Date) throws -> PeripheralBattery? {
+        guard let value = try channel.withOpen({ try channel.battery() }) else { return nil }
+        let name = channel.model?.name ?? displayName(channel.product)
+        let wired = channel.model?.wiredPID == channel.productID
+        return PeripheralBattery(key: WLMouseModel.batteryKey(productID: channel.productID), name: name, percent: Double(value.percent),
+                                 charging: value.charging, updated: now, source: wired ? "WLMOUSE 有线" : "WLMOUSE 接收器")
+    }
+}
+
+/// Keeps the WLMOUSE command channels between reads, so the one-second check never rescans HID devices,
+/// and reports a receiver (or a mouse on its cable) being plugged in or out as it happens.
+/// Callbacks and `channels` live on DeviceIO.queue.
+final class WLMouseWatcher {
+    private let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+    private(set) var channels: [WLMouseChannel] = []
+    private var pending = false
+    private var quietUntil: [Int: Date] = [:]
+    /// Called on DeviceIO.queue once the device list settles after a plug or unplug.
+    var onChange: (() -> Void)?
+
+    init() {
+        IOHIDManagerSetDeviceMatching(manager, [kIOHIDVendorIDKey: WLMouseChannel.vendorID, kIOHIDPrimaryUsagePageKey: 0xFFFF] as CFDictionary)
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        let callback: IOHIDDeviceCallback = { context, _, _, _ in
+            guard let context else { return }
+            Unmanaged<WLMouseWatcher>.fromOpaque(context).takeUnretainedValue().devicesChanged()
+        }
+        IOHIDManagerRegisterDeviceMatchingCallback(manager, callback, context)
+        IOHIDManagerRegisterDeviceRemovalCallback(manager, callback, context)
+        IOHIDManagerSetDispatchQueue(manager, DeviceIO.queue)
+        IOHIDManagerActivate(manager)
+    }
+    deinit { IOHIDManagerCancel(manager) }
+
+    /// Asks each receiver once. An unanswered query retries for up to two seconds, so a receiver whose
+    /// mouse is switched off is left alone for five seconds instead of holding the queue every tick.
+    func read(now: Date = Date()) -> [PeripheralBattery] {
+        channels.compactMap { channel in
+            if let until = quietUntil[channel.productID], now < until { return nil }
+            do { return try PeripheralReader.wlmouseBattery(channel, now: now) }
+            catch { quietUntil[channel.productID] = now.addingTimeInterval(5); return nil }
+        }
+    }
+
+    /// One device shows several interfaces at once; wait half a second, rebuild the list once, then report.
+    private func devicesChanged() {
+        guard !pending else { return }
+        pending = true
+        DeviceIO.queue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            self.pending = false
+            self.channels = WLMouseChannel.channels(IOHIDManagerCopyDevices(self.manager) as? Set<IOHIDDevice> ?? [])
+            self.quietUntil = [:]
+            self.onChange?()
         }
     }
 }

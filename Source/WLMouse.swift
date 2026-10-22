@@ -85,6 +85,14 @@ struct WLMouseModel {
                             lod: lod.sorted(), hyperMode: matches.allSatisfy(\.hyperMode), angleTune: matches.allSatisfy(\.angleTune),
                             sleep: matches.allSatisfy(\.sleep), sleepInSeconds: false, independentXY: matches.allSatisfy(\.independentXY))
     }
+    /// Battery entry key: the wired PID reads as the model's own receiver, so a mouse charging on its cable
+    /// stays one entry with one history instead of appearing twice.
+    static func batteryKey(productID: Int) -> String {
+        guard let model = all.first(where: { $0.wiredPID == productID }),
+              let receiver = model.polling.keys.filter({ $0 != productID && resolve(productID: $0)?.name == model.name }).min()
+        else { return "wl-\(productID)" }
+        return "wl-\(receiver)"
+    }
     func pollingRates(_ productID: Int) -> [Int] { polling[productID] ?? [125, 250, 500, 1000] }
     func connection(_ productID: Int) -> String {
         if productID == wiredPID { return "有线" }
@@ -150,9 +158,11 @@ final class WLMouseChannel {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerSetDeviceMatching(manager, [kIOHIDVendorIDKey: vendorID, kIOHIDPrimaryUsagePageKey: 0xFFFF] as CFDictionary)
         guard IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess else { return [] }
-        let devices = (IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>) ?? []
+        return channels((IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>) ?? [])
+    }
+    static func channels(_ devices: Set<IOHIDDevice>) -> [WLMouseChannel] {
         // Only the 64-byte command channel; a 512-byte one drives screens on other models.
-        return devices.filter { IOHIDDeviceGetProperty($0, kIOHIDMaxFeatureReportSizeKey as CFString) as? Int == 64 }
+        devices.filter { IOHIDDeviceGetProperty($0, kIOHIDMaxFeatureReportSizeKey as CFString) as? Int == 64 }
             .map(WLMouseChannel.init).sorted { $0.productID < $1.productID }
     }
 

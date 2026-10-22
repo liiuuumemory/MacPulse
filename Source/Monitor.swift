@@ -32,6 +32,14 @@ final class Monitor: ObservableObject {
         return stored
     }()
     private var peripheralTimer: DispatchSourceTimer?
+    /// WLMOUSE receivers cannot push a charge event, so they are asked once a second (five minutes with the screens off);
+    /// one query costs about 0.3 ms of CPU. A plug or unplug triggers a read at once.
+    private var chargeTimer: DispatchSourceTimer?
+    private lazy var wlmouse: WLMouseWatcher = {
+        let watcher = WLMouseWatcher()
+        watcher.onChange = { [weak self, unowned watcher] in self?.readWLMouseNow(watcher) }
+        return watcher
+    }()
     private var peripheralsReadAt: Date?
     private var peripheralQueue: DispatchQueue { DeviceIO.queue }
     /// Mouse settings for the settings window; shares the device queue with battery polling.
@@ -114,6 +122,7 @@ final class Monitor: ObservableObject {
         generation &+= 1
         timer?.cancel(); timer = nil
         peripheralTimer?.cancel(); peripheralTimer = nil
+        chargeTimer?.cancel(); chargeTimer = nil
         lastEnergyDate = nil; lastWatts = nil
     }
     /// Panels and windows register while on screen; hidden ones cost no SwiftUI work.
@@ -195,6 +204,13 @@ final class Monitor: ObservableObject {
         peripheralSource.schedule(deadline: .now() + 1, repeating: 60, leeway: .seconds(10))
         peripheralSource.setEventHandler { [weak self] in self?.readPeripheralsNow(version: version) }
         peripheralTimer = peripheralSource; peripheralSource.resume()
+        let watcher = wlmouse
+        let chargeSource = DispatchSource.makeTimerSource(queue: peripheralQueue)
+        let chargePeriod: TimeInterval = screensAsleep ? 300 : 1
+        // Runs on the serial device queue, so a slow reply delays the next tick instead of stacking reads.
+        chargeSource.schedule(deadline: .now() + 1, repeating: chargePeriod, leeway: .milliseconds(Int(chargePeriod * 200)))
+        chargeSource.setEventHandler { [weak self] in self?.readWLMouseNow(watcher, version: version) }
+        chargeTimer = chargeSource; chargeSource.resume()
     }
     private func readPeripherals() {
         let version = generation
@@ -208,10 +224,20 @@ final class Monitor: ObservableObject {
             self.mergePeripherals(fresh)
         }
     }
-    func mergePeripherals(_ fresh: [PeripheralBattery]) {
+    /// Device queue only.
+    private func readWLMouseNow(_ watcher: WLMouseWatcher, version: UInt64? = nil) {
+        let fresh = watcher.read()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, version.map({ self.generation == $0 }) ?? true else { return }
+            self.mergePeripherals(fresh, scope: { $0.key.hasPrefix("wl-") })
+        }
+    }
+    /// `fresh` replaces the readings inside `scope`; readings outside it belong to the other reader and stay.
+    func mergePeripherals(_ fresh: [PeripheralBattery], scope: (PeripheralBattery) -> Bool = { !$0.key.hasPrefix("wl-") }) {
         var merged = fresh
         // Keep a sleeping device's last reading for up to a day.
-        for old in peripherals where !fresh.contains(where: { $0.key == old.key }) && Date().timeIntervalSince(old.updated) < 86_400 {
+        for old in peripherals where !fresh.contains(where: { $0.key == old.key })
+            && (!scope(old) || Date().timeIntervalSince(old.updated) < 86_400) {
             merged.append(old)
         }
         merged.sort { $0.name < $1.name }
@@ -221,9 +247,11 @@ final class Monitor: ObservableObject {
             batteryHistory = history
             if let data = try? JSONEncoder().encode(history) { UserDefaults.standard.set(data, forKey: "peripherals.history.v1") }
         }
-        guard merged != peripherals else { return }
-        if hasVisibleViews { objectWillChange.send() }
+        // Timestamps move every second; only a new device, level, charge state or staleness is worth a redraw.
+        let changed = merged.count != peripherals.count || zip(merged, peripherals).contains { !$0.sameReading(as: $1) }
         peripherals = merged
+        guard changed else { return }
+        if hasVisibleViews { objectWillChange.send() }
         onChange?()
     }
     /// `--simulate-fans N` (snapshots only) stands in N fans, so layouts can be checked on any Mac.

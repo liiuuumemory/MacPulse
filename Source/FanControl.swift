@@ -423,11 +423,6 @@ struct FanSettingsView: View {
     var readings: [FanReading] = []
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                Text("风扇").font(.title2.weight(.semibold))
-                if fan.busy { ProgressView().controlSize(.small) }
-                Spacer()
-            }
             PreferenceCard(title: "风扇控制") {
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
@@ -435,6 +430,7 @@ struct FanSettingsView: View {
                         Text(statusLine).font(.subheadline).foregroundStyle(.secondary)
                     }
                     Spacer()
+                    if fan.busy { ProgressView().controlSize(.small) }
                     Toggle("启用风扇控制", isOn: Binding(get: { fan.settings.enabled }, set: { fan.setEnabled($0) }))
                         .toggleStyle(.switch).labelsHidden().disabled(fan.busy)
                 }

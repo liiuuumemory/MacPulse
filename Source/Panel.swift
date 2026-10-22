@@ -375,9 +375,9 @@ struct DevicesPanelPage: View {
     /// Battery polling and the settings read both report WLMOUSE batteries; whichever arrived first is shown.
     private var items: [PeripheralBattery] {
         var list = peripherals
-        for state in mice.wl where !list.contains(where: { $0.key == "wl-\(state.id)" }) {
+        for state in mice.wl where !list.contains(where: { $0.key == WLMouseModel.batteryKey(productID: state.id) }) {
             guard let battery = state.battery else { continue }
-            list.append(PeripheralBattery(key: "wl-\(state.id)", name: state.name, percent: Double(battery.percent),
+            list.append(PeripheralBattery(key: WLMouseModel.batteryKey(productID: state.id), name: state.name, percent: Double(battery.percent),
                                           charging: battery.charging, updated: Date(), source: "WLMOUSE 接收器"))
         }
         return list
@@ -468,8 +468,7 @@ struct DevicesPanelPage: View {
         .help("点击打开鼠标设置")
     }
     private func wlState(_ device: PeripheralBattery) -> MouseCenter.WLState? {
-        guard device.key.hasPrefix("wl-"), let pid = Int(device.key.dropFirst(3)) else { return nil }
-        return mice.wl.first { $0.id == pid }
+        mice.wlState(forKey: device.key)
     }
     private func estimate(_ points: [BatteryPoint], _ device: PeripheralBattery) -> String {
         if device.charging { return "充电中" }
@@ -478,13 +477,13 @@ struct DevicesPanelPage: View {
     }
     private func subtitle(_ device: PeripheralBattery) -> String {
         var parts = [device.key.hasPrefix("wl-") ? "WLMOUSE" : device.key.hasPrefix("logi-") ? "罗技" : "蓝牙"]
-        if device.key.hasPrefix("wl-"), let pid = Int(device.key.dropFirst(3)), let state = mice.wl.first(where: { $0.id == pid }) { parts.append(state.connection) }
+        if let state = mice.wlState(forKey: device.key) { parts.append(state.connection) }
         if device.charging { parts.append("充电中") }
         if device.stale { parts.append(device.updated.formatted(date: .omitted, time: .shortened) + " 的读数") }
         return parts.joined(separator: " · ")
     }
     private func details(_ device: PeripheralBattery) -> [(String, String)] {
-        if device.key.hasPrefix("wl-"), let pid = Int(device.key.dropFirst(3)), let state = mice.wl.first(where: { $0.id == pid }) {
+        if let state = mice.wlState(forKey: device.key) {
             let s = state.settings
             let dpi = s.stages.indices.contains(s.activeStage - 1) ? "\(s.stages[s.activeStage - 1])" : "—"
             return [("当前 DPI", dpi + "（第 \(s.activeStage) / \(s.stages.count) 档）"), ("回报率", String(s.pollingRate) + " Hz"),

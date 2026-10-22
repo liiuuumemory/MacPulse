@@ -47,9 +47,11 @@ final class MouseCenter: ObservableObject {
     func refreshIfStale(_ age: TimeInterval) {
         if loadedAt.map({ Date().timeIntervalSince($0) > age }) ?? true { refresh() }
     }
+    /// The WLMOUSE settings behind a battery entry; wired and receiver connections share one key.
+    func wlState(forKey key: String) -> WLState? { wl.first { WLMouseModel.batteryKey(productID: $0.id) == key } }
     /// The details shown next to an accessory's battery in the panel.
     func detail(for key: String) -> String? {
-        if key.hasPrefix("wl-"), let pid = Int(key.dropFirst(3)), let state = wl.first(where: { $0.id == pid }) {
+        if let state = wlState(forKey: key) {
             let s = state.settings
             let dpi = s.stages.indices.contains(s.activeStage - 1) ? s.stages[s.activeStage - 1] : nil
             return [state.connection, dpi.map { "\($0) DPI" }, String(s.pollingRate) + " Hz"].compactMap { $0 }.joined(separator: " · ")
@@ -146,7 +148,6 @@ struct MouseSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                Text("外设").font(.title2.weight(.semibold))
                 if center.busy { ProgressView().controlSize(.small) }
                 if !center.message.isEmpty {
                     Label(center.message, systemImage: center.failed ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
