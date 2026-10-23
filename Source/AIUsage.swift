@@ -84,10 +84,13 @@ struct TokenActivity {
     func cost(since date: Date) -> Double { days.filter { $0.date >= date }.reduce(0) { $0 + $1.cost } }
     static var todayStart: Date { Calendar.current.startOfDay(for: Date()) }
     static var weekStart: Date { Calendar.current.date(byAdding: .day, value: -6, to: todayStart)! }
+    static var monthStart: Date { Calendar.current.date(byAdding: .day, value: -29, to: todayStart)! }
     var today: Double { tokens(since: Self.todayStart) }
     var week: Double { tokens(since: Self.weekStart) }
+    var month: Double { tokens(since: Self.monthStart) }
     var todayCost: Double { cost(since: Self.todayStart) }
     var weekCost: Double { cost(since: Self.weekStart) }
+    var monthCost: Double { cost(since: Self.monthStart) }
     /// Made-up usage for `--snapshot-demo`, so published screenshots carry no real usage or spend.
     static func demo(seed: UInt64, scale: Double) -> Self {
         var state = seed

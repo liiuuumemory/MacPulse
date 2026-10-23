@@ -4,11 +4,18 @@ import Combine
 import Foundation
 import ServiceManagement
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem!
-    private var popover: NSPopover!
-    private var panelHost: NSHostingController<PanelView>!
+    /// Built when the panel opens and released a minute after it closes, so an idle MacPulse
+    /// keeps no SwiftUI tree; reopening within the minute reuses it.
+    private var panel: GlassPanel?
+    private var panelHost: NSHostingView<PanelView>?
+    private var panelRelease: DispatchWorkItem?
     private var panelHeight: CGFloat = 0
+    /// Clicks in other apps close an unpinned panel, as a popover would.
+    private var outsideClicks: Any?
+    /// Open or closed as the user sees it; the window may still be fading out.
+    private var panelOpen = false
     private var statusConfiguration: MenuConfiguration?
     private var statusLayout: MenuBarLayout?
     private var statusStrings: [String] = []
@@ -47,16 +54,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         monitor = Monitor(aiProvider: CommandLine.arguments.contains("--claude") ? .claude : nil)
         if snapshot != nil { monitor.setVisible("snapshot", true) }
         if CommandLine.arguments.contains("--ai-settings") { monitor.aiUsage.preferencesTab = "ai" }
-        popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = true
-        popover.delegate = self
-        panelHeight = Self.panelHeight(for: NSScreen.main)
-        popover.contentSize = NSSize(width: PanelLayout.width, height: panelHeight)
-        panelHost = NSHostingController(rootView: makePanel(height: panelHeight))
-        popover.contentViewController = panelHost
-        popover.contentViewController?.view.wantsLayer = true
-        popover.contentViewController?.view.layer?.backgroundColor = NSColor.clear.cgColor
+        // Switching to another app closes an unpinned panel.
+        NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
+            .sink { [weak self] _ in if self?.monitor.pinned == false { self?.closePanel() } }
+            .store(in: &subscriptions)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.imagePosition = .imageOnly
@@ -66,7 +67,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         monitor.onChange = { [weak self] in self?.updateStatus() }
-        monitor.$pinned.sink { [weak self] pinned in self?.popover.behavior = pinned ? .applicationDefined : .transient }.store(in: &subscriptions)
         updateStatus()
         if let index = snapshot, CommandLine.arguments.count > index + 1 {
             let path = CommandLine.arguments[index + 1]
@@ -82,7 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         min(PanelLayout.height, max(480, (screen?.visibleFrame.height ?? 800) - 50))
     }
     private func makePanel(height: CGFloat) -> PanelView {
-        PanelView(monitor: monitor, height: height, dismiss: { [weak self] in self?.popover.performClose(nil) }, openSettings: { [weak self] in self?.showSettings() })
+        PanelView(monitor: monitor, height: height, dismiss: { [weak self] in self?.closePanel() }, openSettings: { [weak self] in self?.showSettings() })
     }
     func updateStatus() {
         guard let button = statusItem?.button else { return }
@@ -108,7 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         }
     }
     @objc func showSettings() {
-        popover?.performClose(nil)
+        closePanel()
         if settingsWindow == nil {
             let window = Self.makeSettingsWindow(monitor: monitor, tab: monitor.aiUsage.preferencesTab)
             window.center()
@@ -119,6 +119,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         monitor.loginEnabled = SMAppService.mainApp.status == .enabled
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+        // Otherwise the first text field takes focus and the page scrolls to it.
+        settingsWindow?.makeFirstResponder(nil)
     }
     /// System Settings–style window: the split view runs full height, under the titlebar.
     static func makeSettingsWindow(monitor: Monitor, tab: String, size: NSSize = NSSize(width: 840, height: 740)) -> NSWindow {
@@ -147,7 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             statusItem.menu = menu
             statusItem.button?.performClick(nil)
             statusItem.menu = nil
-        } else if popover.isShown { popover.performClose(nil) }
+        } else if panelOpen { closePanel() }
         else { showPanel() }
     }
     /// Switches the menu bar layout without opening settings: saved presets, then built-in ones.
@@ -178,25 +180,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         showSettings()
     }
     @objc func openPanel() { showPanel() }
-    func popoverWillShow(_ notification: Notification) { monitor.setVisible("panel", true) }
-    func popoverDidClose(_ notification: Notification) { monitor.setVisible("panel", false) }
-    func windowWillClose(_ notification: Notification) { monitor.setVisible("settings", false) }
+    func windowWillClose(_ notification: Notification) {
+        monitor.setVisible("settings", false)
+        // Drop the whole settings view tree; the next open builds a fresh window.
+        guard let window = notification.object as? NSWindow, window === settingsWindow else { return }
+        DispatchQueue.main.async { [weak self] in
+            if self?.settingsWindow === window, window.isVisible == false {
+                window.contentViewController = nil
+                self?.settingsWindow = nil
+            }
+        }
+    }
     func windowDidMiniaturize(_ notification: Notification) { monitor.setVisible("settings", false) }
     func windowDidDeminiaturize(_ notification: Notification) { monitor.setVisible("settings", true) }
     func showPanel() {
-        guard let button = statusItem.button else { return }
+        guard let button = statusItem.button, let buttonWindow = button.window, !panelOpen else { return }
+        panelOpen = true
         // Follow the screen the menu bar is on now, not the one at launch.
-        let height = Self.panelHeight(for: button.window?.screen ?? NSScreen.main)
-        if height != panelHeight {
-            panelHeight = height
-            popover.contentSize = NSSize(width: PanelLayout.width, height: height)
-            panelHost.rootView = makePanel(height: height)
+        let screen = buttonWindow.screen ?? NSScreen.main
+        let height = Self.panelHeight(for: screen)
+        panelRelease?.cancel(); panelRelease = nil
+        if let panelHost, height != panelHeight { panelHost.rootView = makePanel(height: height) }
+        panelHeight = height
+        let panel: GlassPanel
+        if let existing = self.panel { panel = existing } else {
+            let host = NSHostingView(rootView: makePanel(height: height))
+            host.frame.size = NSSize(width: PanelLayout.width, height: height)
+            panel = GlassPanel(content: host)
+            panel.onCancel = { [weak self] in self?.closePanel() }
+            self.panel = panel; panelHost = host
         }
+        let size = NSSize(width: PanelLayout.width, height: height)
+        panel.place(below: buttonWindow.convertToScreen(button.convert(button.bounds, to: nil)), on: screen, size: size)
+        monitor.setVisible("panel", true)
         NSApp.activate(ignoringOtherApps: true)
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.isOpaque = false
-        popover.contentViewController?.view.window?.backgroundColor = .clear
-        popover.contentViewController?.view.window?.makeKey()
+        panel.alphaValue = 0
+        panel.makeKeyAndOrderFront(nil)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.14
+            panel.animator().alphaValue = 1
+        }
+        outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            if self?.monitor.pinned == false { self?.closePanel() }
+        }
+    }
+    func closePanel() {
+        guard let panel, panelOpen else { return }
+        panelOpen = false
+        if let outsideClicks { NSEvent.removeMonitor(outsideClicks) }
+        outsideClicks = nil
+        monitor.setVisible("panel", false)
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.12
+            panel.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            // Reopened during the fade: keep the window up.
+            guard let self, !self.panelOpen else { return }
+            panel.orderOut(nil)
+            let release = DispatchWorkItem { [weak self] in
+                guard let self, !self.panelOpen else { return }
+                self.panel = nil; self.panelHost = nil
+            }
+            self.panelRelease = release
+            DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: release)
+        })
     }
     func applicationWillTerminate(_ notification: Notification) {
         monitor?.stop(); monitor?.aiUsage.pause()
@@ -208,12 +255,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         let tab = CommandLine.arguments.firstIndex(of: "--snapshot-tab").flatMap { CommandLine.arguments.count > $0 + 1 ? CommandLine.arguments[$0 + 1] : nil } ?? "overview"
         let dark = CommandLine.arguments.contains("--dark")
         // A neutral backing is used only for offscreen layout verification.
-        // Real popovers use the live behind-window visual effect instead.
+        // The real panel is glass, which only draws on screen (see --onscreen below).
         if tab == "bar" { saveBarSnapshot(path, dark: dark); return }
         let content: AnyView
         let size: NSSize
-        if tab == "overview" {
-            let height: CGFloat = CommandLine.arguments.contains("--compact") ? 480 : PanelLayout.height
+        if tab == "keypicker" || tab == "knobpicker" {
+            // Popovers draw in their own window; render the key picker by itself so its layout can be checked.
+            let model = tab == "keypicker" ? KeyboardModel.buff67 : KeyboardModel.bnk16
+            let picker = tab == "keypicker"
+                ? AnyView(KeyPicker(model: model, layers: 4, macros: 16, current: 0x39) { _ in })
+                : AnyView(KnobPicker(model: model, layers: 10, macros: 18, knob: model.knobs[0], codes: [0xBE, 0xBD], press: 0xAE, selection: .constant(nil)) { _, _ in })
+            content = AnyView(picker.fixedSize())
+            size = NSSize(width: 520, height: 560)
+        } else if tab == "overview" {
+            let custom = CommandLine.arguments.firstIndex(of: "--panel-height").flatMap { CommandLine.arguments.count > $0 + 1 ? Double(CommandLine.arguments[$0 + 1]) : nil }
+            let height: CGFloat = custom.map { CGFloat($0) } ?? (CommandLine.arguments.contains("--compact") ? 480 : PanelLayout.height)
             let page = CommandLine.arguments.firstIndex(of: "--panel-page").flatMap { CommandLine.arguments.count > $0 + 1 ? CommandLine.arguments[$0 + 1] : nil }
             content = AnyView(PanelView(monitor: monitor, height: height, page: page ?? "system"))
             size = NSSize(width: PanelLayout.width, height: height)
@@ -224,6 +280,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             snapshotWindow = window
             saveWindowSnapshot(window, path)
+            return
+        }
+        // Glass only draws on screen; --onscreen shows the real panel window so it can be captured with screencapture -l.
+        if CommandLine.arguments.contains("--onscreen") {
+            // A fixed backdrop inside the panel gives the glass something to refract without showing the desktop.
+            let backdrop = CommandLine.arguments.contains("--snapshot-backdrop")
+            let root = backdrop ? AnyView(ZStack { SnapshotBackdrop(dark: dark); content }
+                .clipShape(RoundedRectangle(cornerRadius: PanelLayout.cornerRadius, style: .continuous))) : content
+            let host = NSHostingView(rootView: root)
+            host.frame.size = size
+            let window = GlassPanel(content: host)
+            window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            // `--snapshot-at x,y` puts the panel's top-left there, in points from the main screen's top-left (for promo images).
+            let at = CommandLine.arguments.firstIndex(of: "--snapshot-at").flatMap { CommandLine.arguments.count > $0 + 1 ? CommandLine.arguments[$0 + 1] : nil }?
+                .split(separator: ",").compactMap { Double($0) }
+            if let at, at.count == 2, let screen = NSScreen.main?.frame {
+                window.setPanelFrame(NSRect(x: at[0], y: screen.maxY - at[1] - size.height, width: size.width, height: size.height))
+            } else if let visible = NSScreen.main?.visibleFrame {
+                window.setPanelFrame(NSRect(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2, width: size.width, height: size.height))
+            }
+            snapshotWindow = window
+            announceWhenKey(window)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 12) { NSApp.terminate(nil) }
             return
         }
         let host = NSHostingView(rootView: content.background(Color(nsColor: .windowBackgroundColor)))
@@ -246,9 +325,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         guard let frame = window.contentView?.superview else { exit(2) }
         // Materials only draw on screen; --onscreen shows the window so it can be captured with screencapture -l.
         if CommandLine.arguments.contains("--onscreen") {
-            window.center(); NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
-            print("Window: \(window.windowNumber)"); fflush(stdout)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { NSApp.terminate(nil) }
+            window.center()
+            announceWhenKey(window)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 12) { NSApp.terminate(nil) }
             return
         }
         frame.layoutSubtreeIfNeeded()
@@ -258,6 +337,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             guard let data = rep.representation(using: .png, properties: [:]) else { exit(3) }
             do { try data.write(to: URL(fileURLWithPath: path)); print("Snapshot saved: \(path)"); NSApp.terminate(nil) }
             catch { fputs("Snapshot failed: \(error)\n", stderr); exit(4) }
+        }
+    }
+    /// Shows a snapshot window and prints its number for screencapture -l, but only once it is key:
+    /// until then controls, traffic lights and glass draw in their inactive look.
+    private func announceWhenKey(_ window: NSWindow, attempt: Int = 0) {
+        NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+        // As in showSettings: no text field focus, so the page stays scrolled to the top.
+        window.makeFirstResponder(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            if !window.isKeyWindow && attempt < 10 { self?.announceWhenKey(window, attempt: attempt + 1); return }
+            print("Window: \(window.windowNumber)"); fflush(stdout)
         }
     }
     func saveBarSnapshot(_ path: String, dark: Bool) {
@@ -280,8 +370,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             let size = NSSize(width: layout.width + 24, height: 46)
             let output = NSImage(size: size)
             output.lockFocus()
-            NSColor.windowBackgroundColor.setFill()
-            NSRect(origin: .zero, size: size).fill()
+            // `--snapshot-transparent` leaves the background clear, for placing the bar on an image.
+            if !CommandLine.arguments.contains("--snapshot-transparent") {
+                NSColor.windowBackgroundColor.setFill()
+                NSRect(origin: .zero, size: size).fill()
+            }
             bar.draw(in: NSRect(x: 12, y: 12, width: layout.width, height: 22))
             output.unlockFocus()
             guard let tiff = output.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
@@ -294,6 +387,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
 }
 
+/// Stand-in desktop behind the panel in README screenshots: soft color for the glass to pick up, nothing personal.
+private struct SnapshotBackdrop: View {
+    let dark: Bool
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: dark ? [Color(red: 0.11, green: 0.13, blue: 0.22), Color(red: 0.19, green: 0.14, blue: 0.27), Color(red: 0.26, green: 0.17, blue: 0.16)]
+                                        : [Color(red: 0.83, green: 0.87, blue: 0.95), Color(red: 0.90, green: 0.86, blue: 0.93), Color(red: 0.96, green: 0.89, blue: 0.82)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            RadialGradient(colors: [Color(red: 0.25, green: 0.5, blue: 1).opacity(dark ? 0.45 : 0.3), .clear], center: UnitPoint(x: 0.1, y: 0.85), startRadius: 10, endRadius: 360)
+            RadialGradient(colors: [Color(red: 1, green: 0.6, blue: 0.3).opacity(dark ? 0.3 : 0.25), .clear], center: UnitPoint(x: 0.95, y: 0.1), startRadius: 10, endRadius: 320)
+        }
+    }
+}
+
 func diagnostics() {
     let collector = MetricsCollector()
     _ = collector.sample()
@@ -302,13 +409,18 @@ func diagnostics() {
     let sample = collector.sample()
     let duration = ProcessInfo.processInfo.systemUptime - start
     Thread.sleep(forTimeInterval: 1)
+    let panelStart = ProcessInfo.processInfo.systemUptime
+    _ = collector.sample(detail: [.live, .processes])
+    let panelDuration = ProcessInfo.processInfo.systemUptime - panelStart
+    Thread.sleep(forTimeInterval: 1)
     let summaryStart = ProcessInfo.processInfo.systemUptime
-    _ = collector.sample(detailed: false)
+    _ = collector.sample(detail: [])
     let summaryDuration = ProcessInfo.processInfo.systemUptime - summaryStart
     let payload: [String: Any] = [
         "chip": collector.chip,
         "model": collector.model,
         "sampleMilliseconds": duration * 1000,
+        "panelSampleMilliseconds": panelDuration * 1000,
         "summarySampleMilliseconds": summaryDuration * 1000,
         "cpuPercent": sample.cpu as Any? ?? NSNull(),
         "logicalCores": sample.cores.count,
@@ -326,7 +438,7 @@ func diagnostics() {
         "diskFreeBytes": sample.diskFree,
         "diskReadBytesPerSecond": sample.diskRead as Any? ?? NSNull(),
         "diskWriteBytesPerSecond": sample.diskWrite as Any? ?? NSNull(),
-        "networks": sample.networks.map { ["interface": $0.name, "downloadBytesPerSecond": $0.download, "uploadBytesPerSecond": $0.upload, "receivedBytes": $0.received, "sentBytes": $0.sent, "fullCounters": $0.fullCounters] as [String: Any] },
+        "networks": sample.networks.map { ["interface": $0.name, "downloadBytesPerSecond": $0.download, "uploadBytesPerSecond": $0.upload, "receivedBytes": $0.received, "sentBytes": $0.sent] as [String: Any] },
         "temperatureSensors": sample.sensors.filter { $0.kind == "°C" }.count,
         "fans": sample.sensors.filter { $0.kind == "RPM" }.map { ["key": $0.key, "rpm": $0.value] as [String: Any] },
         "thermalState": sample.thermal,
@@ -344,14 +456,9 @@ func tests() {
     testAIUsage()
     precondition(counterDelta(200, 100) == 100)
     precondition(counterDelta(100, 200) == 0, "counter reset must not underflow")
-    precondition(counterDelta(0x100001000, 0xfffff000) == 8192, "network counters must retain upper 32 bits")
-    let network = parseNetworkCounters("""
-    Name Mtu Network Address Ipkts Ierrs Ibytes Opkts Oerrs Obytes Coll
-    en0 1500 <Link#7> 00:11:22:33:44:55 10 0 478176695034 20 0 21432108979 0
-    en0 1500 192.168.0 192.168.0.2 10 - 478176695034 20 - 21432108979 -
-    lo0 16384 <Link#1> 10 0 90 10 0 90 0
-    """)
-    precondition(network.count == 1 && network["en0"]?.0 == 478176695034 && network["en0"]?.1 == 21432108979, "parse full network counters without duplicate IP rows")
+    precondition(counterDelta(0x100001000, 0xfffff000) == 8192, "disk counters must retain upper 32 bits")
+    precondition(wrappingDelta32(0x0000_0800, 0xffff_fc00) == 3072, "network counters wrap at 32 bits")
+    precondition(wrappingDelta32(5_000, 5_000) == 0)
     precondition(Format.rate(nil) == "—")
     precondition(Format.bytes(1024) == "1.0 KB")
     precondition(Format.number(.nan) == "—")
@@ -514,6 +621,32 @@ func tests() {
     precondition(reading.sameReading(as: PeripheralBattery(key: "wl-1", name: "鼠标", percent: 72, charging: false, updated: Date().addingTimeInterval(-1), source: "")))
     precondition(!reading.sameReading(as: PeripheralBattery(key: "wl-1", name: "鼠标", percent: 72, charging: true, updated: Date(), source: "")))
     precondition(!reading.sameReading(as: PeripheralBattery(key: "wl-1", name: "鼠标", percent: 72, charging: false, updated: Date().addingTimeInterval(-300), source: "")))
+    // VIA keyboards: macro buffer round-trip, key names per protocol version, and blocked keys.
+    let macros: [[MacroStep]] = [[.text("Hi"), .tap(0x28)], [], [.down(0xE3), .tap(0x06), .up(0xE3), .delay(150)]]
+    let macroBytes = MacroCodec.encode(macros)
+    precondition(macroBytes == [0x48, 0x69, 1, 1, 0x28, 0, 0, 1, 2, 0xE3, 1, 1, 0x06, 1, 3, 0xE3, 1, 4, 0x31, 0x35, 0x30, 0x7C, 0])
+    precondition(MacroCodec.decode(macroBytes + [0, 0], count: 4) == macros + [[]], "empty slots pad to the macro count")
+    precondition(Keycode.describe(0x5221, model: .buff67).short == "MO 1" && Keycode.describe(0x5262, model: .buff67).short == "TG 2")
+    precondition(Keycode.describe(0x5203, model: .bnk16).short == "TO 3" && Keycode.describe(0x52C1, model: .bnk16).short == "TT 1")
+    precondition(Keycode.describe(0x7F00, model: .buff67).short == "Win 锁" && Keycode.describe(0x7E05, model: .bnk16).short == "关灯")
+    precondition(Keycode.describe(0x7702, model: .buff67).short == "M0" && Keycode.describe(0x7700, model: .bnk16).short == "M0", "macro base follows the VIA protocol")
+    precondition(Keycode.describe(0x0804, model: .buff67).short == "⌘A" && Keycode.describe(0x0904, model: .buff67).short == "⌃⌘A" && Keycode.describe(0x4105, model: .buff67).short == "L1\nB")
+    precondition(Keycode.blocked(0x7C00, model: .buff67) && Keycode.blocked(0x7E08, model: .bnk16) && !Keycode.blocked(0x7E05, model: .bnk16))
+    let keyboardState = KeyboardState(layers: 2, keymap: [[0x29, 0x5221], [1, 0]], encoders: [[[0xAA, 0xA9]], [[0, 0]]], macroCount: 3, macroBufferSize: 64,
+                                      macros: macros, lighting: KeyboardLightingValues(effect: 4, brightness: 200, speed: 3, hue: 10, saturation: 255))
+    let backup = KeyboardBackup(model: .bnk16, state: keyboardState)
+    let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+    let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+    let restored = try! decoder.decode(KeyboardBackup.self, from: encoder.encode(backup)).state
+    precondition(restored == keyboardState && backup.fits(keyboardState), "a backup restores the same keymap, knobs, macros and lighting")
+    var other = keyboardState; other.layers = 3; other.keymap.append([0, 0])
+    precondition(!backup.fits(other), "a backup never restores onto a different board shape")
+    precondition(KeyboardEditor.backupTitle(URL(fileURLWithPath: "/x/2026-10-23 173012.json")) == "2026-10-23 17:30:12")
+    var dim = KeyboardLightingValues(effect: 0, brightness: 0); var dimBack = dim; dimBack.brightness = 1; dimBack.speed = 9
+    precondition(VIAKeyboard.lightingMatches(dim, dimBack, model: .bnk16) == false && VIAKeyboard.lightingMatches(dim, dimBack, model: .buff67) == false)
+    dim.brightness = 1
+    precondition(VIAKeyboard.lightingMatches(dim, dimBack, model: .buff67), "speed is not compared on a board without a speed setting")
+    precondition(KeyboardModel.buff67.keys.count == 67 && KeyboardModel.buff67.width == 16 && KeyboardModel.bnk16.width == 7.5 && KeyboardModel.bnk16.height == 4)
     // HID++ DPI lists: explicit values, and 0xE0xx step markers that expand up to the next value.
     precondition(LogitechDevice.parseDPIList([0x01, 0x90, 0x03, 0x20, 0x06, 0x40, 0x00, 0x00]) == [400, 800, 1600])
     precondition(LogitechDevice.parseDPIList([0x01, 0x90, 0xE1, 0x90, 0x06, 0x40, 0x00, 0x00]) == [400, 800, 1200, 1600])
@@ -586,6 +719,158 @@ func mouseDump() {
     exit(0)
 }
 
+/// Read-only dump of every wired keyboard and, for supported VIA boards, what the driver reads; never writes.
+func keyboardDump() {
+    // The same watcher and queue as the app: the list arrives on DeviceIO.queue, where the VIA reads run.
+    let watcher = WiredKeyboardWatcher()
+    watcher.onChange = { list in dumpKeyboards(list); exit(0) }
+    RunLoop.main.run(until: Date().addingTimeInterval(8))
+    print("no keyboards reported"); exit(1)
+}
+private func dumpKeyboards(_ list: [WiredKeyboard]) {
+    for keyboard in list {
+        print("\(keyboard.name) \(keyboard.id) model \(keyboard.model?.name ?? "none")")
+        guard let model = keyboard.model else { continue }
+        guard let channel = VIAChannel.find(vendorID: keyboard.vendorID, productID: keyboard.productID, location: keyboard.location) else { print("  no VIA channel"); continue }
+        do {
+            let state = try channel.withOpen { try VIAKeyboard.read(channel, model: model) }
+            print("  layers \(state.layers), macros \(state.macrosInUse)/\(state.macroCount) using \(state.macroBytes)/\(state.macroBufferSize) bytes, lighting \(state.lighting.map { "\($0)" } ?? "none")")
+            for layer in state.keymap.indices {
+                print("  layer \(layer): " + model.keys.map { Keycode.describe(state.keycode(layer, $0, cols: model.cols), model: model).short.replacingOccurrences(of: "\n", with: "/") }.joined(separator: " "))
+            }
+            if CommandLine.arguments.contains("--raw") {
+                for codes in state.keymap { print("  raw " + codes.map { String(format: "%04x", $0) }.joined(separator: ",")) }
+            }
+            for (layer, knobs) in state.encoders.enumerated() where !knobs.isEmpty {
+                print("  knobs \(layer): " + knobs.map { $0.map { String(format: "%04X", $0) }.joined(separator: "/") }.joined(separator: " "))
+            }
+        } catch { print("  error: \(error.localizedDescription)") }
+    }
+}
+
+/// Writes the driver tables MacPulse uses (keyboard and mouse models, keycode names, key mappings) as JSON,
+/// so the same data can drive a port to another platform. Generated from the Swift tables, never edited by hand.
+func exportDriverData() {
+    guard let flag = CommandLine.arguments.firstIndex(of: "--export-driver-data"), CommandLine.arguments.count > flag + 1 else {
+        print("usage: --export-driver-data <folder>"); exit(1)
+    }
+    let folder = URL(fileURLWithPath: CommandLine.arguments[flag + 1], isDirectory: true)
+    func hex(_ value: Int, _ digits: Int = 4) -> String { String(format: "0x%0\(digits)X", value) }
+    func write(_ name: String, _ object: Any) {
+        let data = try! JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        try! data.write(to: folder.appendingPathComponent(name))
+        print("wrote \(name)")
+    }
+    try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    func key(_ k: KeyboardKey) -> [String: Any] { ["row": k.row, "col": k.col, "x": k.x, "y": k.y, "w": k.w, "h": k.h] }
+    write("keyboards.json", KeyboardModel.all.map { m -> [String: Any] in
+        var model: [String: Any] = [
+            "name": m.name, "vendorId": hex(m.vendorID), "productId": hex(m.productID),
+            "matrix": ["rows": m.rows, "cols": m.cols], "viaProtocol": m.protocolVersion,
+            "macroKeycodeBase": hex(Int(m.macroBase)), "customKeycodeBase": hex(Int(m.customBase)),
+            "layoutUnits": ["width": m.width, "height": m.height],
+            "keys": m.keys.map(key),
+            "knobs": m.knobs.map { k -> [String: Any] in
+                var knob: [String: Any] = ["index": k.index, "x": k.x, "y": k.y, "size": k.size]
+                if let press = k.press { knob["press"] = ["row": press.row, "col": press.col] }
+                return knob
+            },
+            "customKeycodes": m.custom.enumerated().map { ["keycode": hex(Int(m.customBase) + $0.offset), "short": $0.element.short, "name": $0.element.name, "hiddenInPicker": $0.element.hidden] },
+            "source": m.driverName,
+        ]
+        if let l = m.lighting {
+            var lighting: [String: Any] = [
+                "channel": Int(l.channel), "effectValueId": Int(l.effectID), "brightnessValueId": Int(l.brightnessID),
+                "effects": l.effects.map { ["value": $0.value, "name": $0.name] },
+                "brightness": [l.brightness.lowerBound, l.brightness.upperBound],
+                "colorEffects": l.colorEffects.sorted(), "indicatorOnly": l.indicatorOnly,
+            ]
+            if let id = l.speedID { lighting["speedValueId"] = Int(id) }
+            if let id = l.colorID { lighting["colorValueId"] = Int(id) }
+            if let speed = l.speed { lighting["speed"] = [speed.lowerBound, speed.upperBound] }
+            model["lighting"] = lighting
+        }
+        return model
+    })
+    func entries(_ list: [Keycode.Entry]) -> [[String: Any]] { list.map { ["keycode": hex(Int($0.code)), "short": $0.short, "name": $0.name] } }
+    write("keycodes.json", [
+        "note": "QMK keycodes as VIA protocol 11 and 12 send them. Macro and custom keycode bases differ per protocol; see keyboards.json.",
+        "basic": entries(Keycode.basic), "numpad": entries(Keycode.numpad), "modifiers": entries(Keycode.modifiers),
+        "media": entries(Keycode.media), "lighting": entries(Keycode.lighting),
+        "special": [["keycode": "0x0000", "short": "", "name": "无 KC_NO"], ["keycode": "0x0001", "short": "▽", "name": "透明 KC_TRNS"]],
+        "layerFunctions": Keycode.layerKinds.map { ["base": hex(Int($0.base)), "short": $0.short, "name": $0.name, "keycode": "base + layer (0–31)"] },
+        "modifierBits": Keycode.modBits.map { ["bit": hex(Int($0.bit), 2), "symbol": $0.symbol, "name": $0.name] } + [["bit": "0x10", "symbol": "右", "name": "Right-hand modifiers"]],
+        "ranges": [
+            ["range": "0x0100–0x1FFF", "meaning": "modifiers + basic key: (mods << 8) | key"],
+            ["range": "0x2000–0x3FFF", "meaning": "mod-tap: 0x2000 | (mods << 8) | key"],
+            ["range": "0x4000–0x4FFF", "meaning": "layer-tap: 0x4000 | (layer << 8) | key"],
+            ["range": "0x52A0–0x52BF", "meaning": "one-shot modifier: 0x52A0 | mods"],
+            ["range": "0x7700/0x7702 + n", "meaning": "macro n (protocol 12 / 11)"],
+            ["range": "0x7E00/0x7F00 + n", "meaning": "keyboard custom keycode n (protocol 12 / 11)"],
+        ],
+        "neverAssigned": ["0x7C00 QK_BOOT", "0x7C01 QK_REBOOT", "0x7C03 QK_CLEAR_EEPROM", "custom keycodes marked hiddenInPicker"],
+    ])
+    write("mac-virtual-keycode-to-hid.json", Dictionary(uniqueKeysWithValues: Keycode.fromMac.map { (hex(Int($0.key), 2), hex(Int($0.value), 2)) }))
+    write("wlmouse-models.json", [
+        "vendorId": hex(WLMouseChannel.vendorID),
+        "pollingRateCodes": Dictionary(uniqueKeysWithValues: WLMouseChannel.pollingCodes.map { (String($0.key), hex(Int($0.value), 2)) }),
+        "lodEncoding": Dictionary(uniqueKeysWithValues: [0.7, 1.0, 1.2, 2.0].map { (String($0), hex(Int(WLMouseChannel.encodeLOD($0)), 2)) }),
+        "models": WLMouseModel.all.map { m -> [String: Any] in
+            var model: [String: Any] = [
+                "name": m.name, "english": m.english,
+                "pollingRatesByProductId": Dictionary(uniqueKeysWithValues: m.polling.map { (hex($0.key), $0.value) }),
+                "maxDPI": m.maxDPI, "dpiStep": m.dpiStep, "maxStages": m.maxStages, "lodMillimetres": m.lod,
+                "hyperMode": m.hyperMode, "angleTune": m.angleTune, "sleep": m.sleep, "sleepInSeconds": m.sleepInSeconds, "independentXY": m.independentXY,
+            ]
+            if let wired = m.wiredPID { model["wiredProductId"] = hex(wired) }
+            return model
+        },
+    ])
+    exit(0)
+}
+
+/// Write-path check on each supported keyboard (or the one named after the flag): changes the last layer's first key,
+/// a knob, the last macro slot and the lighting brightness, verifies, then restores the original and verifies again.
+func keyboardRoundTrip() {
+    let only = CommandLine.arguments.firstIndex(of: "--keyboard-roundtrip").flatMap { CommandLine.arguments.count > $0 + 1 ? CommandLine.arguments[$0 + 1] : nil }
+    let watcher = WiredKeyboardWatcher()
+    watcher.onChange = { list in
+        var failed = false
+        for keyboard in list where keyboard.model != nil && (only == nil || keyboard.name.localizedCaseInsensitiveContains(only!)) {
+            let model = keyboard.model!
+            print("\(keyboard.name):")
+            guard let channel = VIAChannel.find(vendorID: keyboard.vendorID, productID: keyboard.productID, location: keyboard.location) else { print("  no VIA channel"); failed = true; continue }
+            do {
+                try channel.withOpen {
+                    let original = try VIAKeyboard.read(channel, model: model)
+                    let url = try KeyboardBackup.save(KeyboardBackup(model: model, state: original), model: model)
+                    print("  backup \(url.path)")
+                    var changed = original
+                    let layer = original.layers - 1, key = model.keys[0], index = key.row * model.cols + key.col
+                    changed.keymap[layer][index] = original.keymap[layer][index] == 0x68 ? 0x69 : 0x68
+                    if !model.knobs.isEmpty { changed.encoders[layer][0][1] = original.encoders[layer][0][1] == 0x68 ? 0x69 : 0x68 }
+                    changed.macros[original.macroCount - 1] = [.text("mp")]
+                    if var lighting = original.lighting, let menu = model.lighting {
+                        lighting.brightness = lighting.brightness > menu.brightness.lowerBound + 40 ? lighting.brightness - 40 : lighting.brightness + 40
+                        changed.lighting = lighting
+                    }
+                    let after = try VIAKeyboard.apply(channel, model: model, changed, over: original)
+                    print("  wrote key \(key.id) on layer \(layer)" + (model.knobs.isEmpty ? "" : ", knob") + ", macro M\(original.macroCount - 1), brightness \(after.lighting?.brightness ?? -1): verified")
+                    let restored = try VIAKeyboard.apply(channel, model: model, original, over: after)
+                    let same = restored.keymap == original.keymap && restored.encoders == original.encoders
+                        && MacroCodec.encode(restored.macros) == MacroCodec.encode(original.macros)
+                        && (original.lighting == nil || VIAKeyboard.lightingMatches(restored.lighting!, original.lighting!, model: model))
+                    print("  restored: \(same ? "identical to original" : "DIFFERENT")")
+                    if !same { failed = true }
+                }
+            } catch { print("  error: \(error.localizedDescription)"); failed = true }
+        }
+        exit(failed ? 1 : 0)
+    }
+    RunLoop.main.run(until: Date().addingTimeInterval(20))
+    print("no keyboards reported"); exit(1)
+}
+
 /// Write-path check on the first WLMOUSE: flips angle snap, verifies, then restores and verifies the original.
 func mouseRoundTrip() {
     guard let channel = WLMouseChannel.find().first else { print("no WLMOUSE"); exit(1) }
@@ -634,6 +919,9 @@ else if let index = CommandLine.arguments.firstIndex(of: "--open-monitor"), Comm
 }
 else if CommandLine.arguments.contains("--mouse-roundtrip") { mouseRoundTrip() }
 else if CommandLine.arguments.contains("--mouse-dump") { mouseDump() }
+else if CommandLine.arguments.contains("--keyboard-dump") { keyboardDump() }
+else if CommandLine.arguments.contains("--keyboard-roundtrip") { keyboardRoundTrip() }
+else if CommandLine.arguments.contains("--export-driver-data") { exportDriverData() }
 else if CommandLine.arguments.contains("--test") { tests() }
 else {
     let application = NSApplication.shared

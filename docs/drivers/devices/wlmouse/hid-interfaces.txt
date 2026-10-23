@@ -1,0 +1,7 @@
+Services:
+VendorID ProductID LocationID UsagePage Usage RegistryID  Transport Class                                Product                      UserClass               Built-In 
+0x36a7   0xa868    0x121000   1         2     0x1000a0493 USB       AppleUserHIDEventService             WLMOUSE MINI PRO 8K RECEIVER AppleUserHIDEventDriver 0        
+0x36a7   0xa868    0x121000   12        1     0x1000a048d USB       AppleUserHIDEventService             WLMOUSE MINI PRO 8K RECEIVER AppleUserHIDEventDriver 0        
+0x36a7   0xa868    0x121000   12        1     0x1000a047e USB       AppleUserHIDDevice WLMOUSE MINI PRO 8K RECEIVER AppleUserUSBHostHIDDevice 0        
+0x36a7   0xa868    0x121000   1         2     0x1000a0482 USB       AppleUserHIDDevice WLMOUSE MINI PRO 8K RECEIVER AppleUserUSBHostHIDDevice 0        
+0x36a7   0xa868    0x121000   65535     0     0x1000a0484 USB       AppleUserHIDDevice WLMOUSE MINI PRO 8K RECEIVER AppleUserUSBHostHIDDevice 0        

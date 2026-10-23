@@ -9,8 +9,6 @@ int mp_smc_key(uint32_t connection, uint32_t index, char *key);
 #ifdef MP_SMC_WRITE
 int mp_smc_write(uint32_t connection, const char *key, const uint8_t *bytes, uint32_t size);
 #endif
-int mp_network_counters(const char *name, uint64_t *received, uint64_t *sent);
-long mp_netstat(char *buffer, size_t capacity);
 int mp_power_open(void);
 int mp_power_sample(double *cpu, double *gpu, double *ane);
 void mp_power_close(void);

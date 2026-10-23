@@ -26,7 +26,7 @@ struct SettingsGroup: Identifiable {
         ]),
         SettingsGroup(id: "hardware", title: "硬件", color: NSColor(srgbRed: 0.357, green: 0.424, blue: 0.941, alpha: 1), pages: [
             SettingsPage(id: "fan", title: "风扇", symbol: "fan", detail: "查看风扇转速，选择预设或自定义温度曲线来控制风扇。"),
-            SettingsPage(id: "mouse", title: "外设", symbol: "computermouse", detail: "读取并调整支持的无线鼠标设置，查看外设电量与连接状态。"),
+            SettingsPage(id: "mouse", title: "外设", symbol: "powerplug.portrait", detail: "查看鼠标、键盘的电量与连接状态；点“自定义”进入设备页，调整 DPI、改键、宏与灯光。"),
         ]),
         SettingsGroup(id: "service", title: "服务", color: NSColor(srgbRed: 0.486, green: 0.361, blue: 0.902, alpha: 1), pages: [
             SettingsPage(id: "ai", title: "AI 用量", symbol: "sparkles", detail: "汇总 Codex、Claude 等 AI 工具的本地用量与账户额度，可设置自定义额度。"),
@@ -72,8 +72,10 @@ struct PreferencesView: View {
         let selection = history[cursor]
         return selection == "fan" && !hasFans ? "sensors" : selection
     }
+    /// A device page ("device:<id>") sits under 外设 in the sidebar.
+    private var sidebarPage: String { current.hasPrefix("device:") ? "mouse" : current }
     private var page: SettingsPage {
-        SettingsGroup.all.flatMap(\.pages).first { $0.id == current } ?? SettingsGroup.all[0].pages[0]
+        SettingsGroup.all.flatMap(\.pages).first { $0.id == sidebarPage } ?? SettingsGroup.all[0].pages[0]
     }
     private func go(_ id: String) {
         guard id != history[cursor] else { return }
@@ -102,17 +104,24 @@ struct PreferencesView: View {
         }
         .frame(minWidth: 800, minHeight: 580)
         .onReceive(monitor.aiUsage.$preferencesTab.dropFirst()) { go($0) }
+        .onChange(of: current, initial: true) { monitor.setSettingsPage(current) }
     }
     private var detail: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                header
+                if current.hasPrefix("device:") {
+                    PeripheralDetailPage(monitor: monitor, device: String(current.dropFirst(7))) {
+                        // Back returns to the overview it came from rather than stacking another visit.
+                        if cursor > 0 && history[cursor - 1] == "mouse" { cursor -= 1 } else { go("mouse") }
+                    }
+                } else { header }
                 if current == "menu" { MenuBarPreview(monitor: monitor); MenuBarEditor(monitor: monitor) }
                 else if current == "sensors" { SensorSettingsView(monitor: monitor) }
                 else if current == "processes" { ProcessSettingsView(monitor: monitor) }
                 else if current == "alerts" { AlertSettingsView(alerts: monitor.alerts) }
                 else if current == "ai" { AIUsageSettingsView(usage: monitor.aiUsage) }
-                else if current == "mouse" { MouseSettingsView(center: monitor.mice) }
+                else if current == "mouse" { PeripheralsSettingsView(monitor: monitor, mice: monitor.mice, keyboards: monitor.keyboards, open: go) }
+                else if current.hasPrefix("device:") { EmptyView() }
                 else if current == "fan" { FanSettingsView(fan: monitor.fan, temperature: monitor.sample.cpuTemp, readings: monitor.sample.fans) }
                 else { GeneralSettingsView(monitor: monitor) }
             }.frame(maxWidth: 620, alignment: .leading).padding(24)
@@ -120,7 +129,6 @@ struct PreferencesView: View {
         }
         // The content column may shrink; anything still too wide is clipped instead of pushing the sidebar.
         .frame(minWidth: 0, maxWidth: .infinity).clipped()
-        .background(SettingsColor.content)
     }
     /// Page header: icon and large title, one line on what the page is for, then a rule.
     private var header: some View {
@@ -134,56 +142,45 @@ struct PreferencesView: View {
         }
     }
     private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "" }
-    /// Grouped page list with section titles; the selected row is a solid accent pill with white text.
+    /// The system sidebar list, so it gets the Liquid Glass sidebar and selection of macOS 26 and later.
     private var sidebar: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 10) {
-                    Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 38, height: 38)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("MacPulse").font(.system(size: 14, weight: .semibold))
-                        Text("版本 \(version)").font(.subheadline).foregroundStyle(.secondary)
-                    }
-                }.padding(.horizontal, 8).padding(.bottom, 6)
-                ForEach(groups) { group in
-                    Text(group.title).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                        .padding(.horizontal, 8).padding(.top, 12).padding(.bottom, 3)
+        List(selection: Binding<String?>(get: { sidebarPage }, set: { if let id = $0 { go(id) } })) {
+            ForEach(groups) { group in
+                Section(group.title) {
                     ForEach(group.pages) { page in
-                        let selected = current == page.id
-                        Button { go(page.id) } label: {
-                            HStack(spacing: 8) {
-                                SettingsIconTile(symbol: page.symbol, color: group.color)
-                                Text(page.title).font(.system(size: 13, weight: selected ? .medium : .regular))
-                                    .foregroundStyle(selected ? Color.white : Color.primary)
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 6).padding(.vertical, 4)
-                            .background(selected ? Color.accentColor : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                            .contentShape(Rectangle())
-                        }.buttonStyle(.plain)
-                            .accessibilityAddTraits(selected ? .isSelected : [])
+                        Label { Text(page.title) } icon: { SettingsIconTile(symbol: page.symbol, color: group.color) }
+                            .tag(page.id)
                     }
                 }
-            }.padding(.horizontal, 10).padding(.vertical, 8)
-        }.scrollIndicators(.never)
+            }
+        }
+        .listStyle(.sidebar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HStack(spacing: 10) {
+                // Drawn live: the Dock's cached app icon can lag behind a new icon file.
+                AppLogo(size: 38)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("MacPulse").font(.system(size: 14, weight: .semibold))
+                    Text("版本 \(version)").font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }.padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 8)
+        }
     }
 }
 
-/// Settings surfaces: grey page, raised cards, so groups stay distinct in both appearances.
+/// Settings surfaces: borderless grouped boxes on the system window background, as in System Settings.
 enum SettingsColor {
     private static func adaptive(light: NSColor, dark: NSColor) -> Color {
         Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light })
     }
-    static let content = adaptive(light: NSColor(white: 0.955, alpha: 1), dark: NSColor(white: 0.16, alpha: 1))
-    static let sidebar = adaptive(light: NSColor(white: 0.925, alpha: 1), dark: NSColor(white: 0.12, alpha: 1))
-    static let card = adaptive(light: .white, dark: NSColor(white: 1, alpha: 0.06))
+    static let card = adaptive(light: NSColor(white: 0, alpha: 0.04), dark: NSColor(white: 1, alpha: 0.055))
     static let border = adaptive(light: NSColor(white: 0, alpha: 0.08), dark: NSColor(white: 1, alpha: 0.08))
 }
 
 extension View {
     func settingsCard() -> some View {
-        background(SettingsColor.card, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(SettingsColor.border, lineWidth: 1))
+        background(SettingsColor.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -373,6 +370,71 @@ struct PreferenceCard<Content: View>: View {
     }
 }
 
+/// Picks up to three disks for the panel's disk card, in the order they are ticked.
+struct PanelDiskPicker: View {
+    @ObservedObject var monitor: Monitor
+    private var chosen: [String] { monitor.panelDisks ?? Monitor.defaultDisks(monitor.sample.volumes).map(\.id) }
+    /// Connected disks, then chosen ones that are unplugged now.
+    private var rows: [(id: String, name: String, volume: VolumeInfo?)] {
+        let connected = monitor.sample.volumes.map { (id: $0.id, name: $0.name, volume: Optional($0)) }
+        let missing = chosen.filter { id in !connected.contains { $0.id == id } }
+            .map { (id: $0, name: monitor.knownVolumes[$0] ?? "未知磁盘", volume: VolumeInfo?.none) }
+        return connected + missing
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(rows, id: \.id) { row in
+                let on = chosen.contains(row.id)
+                Toggle(isOn: Binding(get: { on }, set: { toggle(row.id, $0) })) {
+                    HStack(spacing: 8) {
+                        Group {
+                            if let volume = row.volume, volume.path != "/" {
+                                Image(nsImage: NSWorkspace.shared.icon(forFile: volume.path)).resizable()
+                            } else {
+                                Image(systemName: row.volume == nil ? "externaldrive.badge.xmark" : VolumeInfo.macSymbol).foregroundStyle(.secondary)
+                            }
+                        }.frame(width: 18, height: 18)
+                        Text(row.name).lineLimit(1).truncationMode(.tail)
+                        if let volume = row.volume {
+                            Text("可用 \(Format.bytes(volume.free)) / \(Format.bytes(volume.total))").font(.subheadline).foregroundStyle(.secondary)
+                        } else {
+                            Text("未连接").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .disabled(!on && chosen.count >= Monitor.maxPanelDisks)
+            }
+            Text("最多选 \(Monitor.maxPanelDisks) 个，按勾选的先后排列。未连接的磁盘不显示，接上后自动出现。磁盘映像和网络磁盘不列出。")
+                .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+    private func toggle(_ id: String, _ on: Bool) {
+        var list = chosen.filter { $0 != id }
+        if on { list.append(id) }
+        monitor.panelDisks = Array(list.prefix(Monitor.maxPanelDisks))
+    }
+}
+
+/// A small sample of the panel glass over a colorful backdrop, updated as the setting changes.
+struct GlassPreview: View {
+    let mode: String
+    let tint: Double
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(red: 0.25, green: 0.45, blue: 1), Color(red: 0.75, green: 0.35, blue: 0.85), Color(red: 1, green: 0.6, blue: 0.3)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            Text("MacPulse").font(.system(size: 13, weight: .semibold)).frame(width: 104, height: 56)
+                .glassEffect(PanelLayout.glass(mode: mode, tint: tint, dark: scheme == .dark),
+                             in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .frame(width: 150, height: 86)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityHidden(true)
+    }
+}
+
 struct GeneralSettingsView: View {
     @ObservedObject var monitor: Monitor
     private var s: Sample { monitor.sample }
@@ -401,6 +463,26 @@ struct GeneralSettingsView: View {
                     }
                 }
             }.fixedSize(horizontal: false, vertical: true)
+            PreferenceCard(title: "面板玻璃") {
+                HStack(alignment: .center, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Picker("透明度", selection: $monitor.glassMode) {
+                            Text("跟随系统").tag("system"); Text("自定义").tag("custom")
+                        }.pickerStyle(.segmented).labelsHidden().fixedSize()
+                        HStack(spacing: 10) {
+                            Text("清透").font(.subheadline).foregroundStyle(.secondary)
+                            Slider(value: $monitor.glassTint, in: 0...1).frame(maxWidth: 240)
+                            Text("着色").font(.subheadline).foregroundStyle(.secondary)
+                        }.disabled(monitor.glassMode != "custom").opacity(monitor.glassMode == "custom" ? 1 : 0.45)
+                        Text(monitor.glassMode == "system"
+                             ? "面板用系统的液态玻璃外观，在系统设置里调整液态玻璃的透明度时一起变化。"
+                             : "越靠近“清透”，面板越透明，后面的窗口和壁纸越明显；越靠近“着色”，面板越实，文字越清楚。固定面板后可以边调边看。")
+                            .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    GlassPreview(mode: monitor.glassMode, tint: monitor.glassTint)
+                }
+            }
+            PreferenceCard(title: "面板中的磁盘") { PanelDiskPicker(monitor: monitor) }
             PreferenceCard(title: "网络") {
                 PreferenceField(title: "统计接口") {
                     Picker("统计接口", selection: $monitor.selectedInterface) {

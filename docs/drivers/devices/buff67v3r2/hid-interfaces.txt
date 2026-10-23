@@ -1,0 +1,7 @@
+Services:
+VendorID ProductID LocationID UsagePage Usage RegistryID  Transport Class                                Product                      UserClass               Built-In 
+0xb710   0xb710    0x124000   1         6     0x1000a072e USB       AppleUserHIDEventService             BUFF67v3r2                   AppleUserHIDEventDriver 0        
+0xb710   0xb710    0x124000   1         2     0x1000a072a USB       AppleUserHIDEventService             BUFF67v3r2                   AppleUserHIDEventDriver 0        
+0xb710   0xb710    0x124000   1         2     0x1000a071b USB       AppleUserHIDDevice BUFF67v3r2                   AppleUserUSBHostHIDDevice 0        
+0xb710   0xb710    0x124000   1         6     0x1000a071d USB       AppleUserHIDDevice BUFF67v3r2                   AppleUserUSBHostHIDDevice 0        
+0xb710   0xb710    0x124000   65376     97    0x1000a0721 USB       AppleUserHIDDevice BUFF67v3r2                   AppleUserUSBHostHIDDevice 0        

@@ -107,6 +107,8 @@ private struct LegacyMenuColumn: Decodable {
 }
 
 enum MenuSymbols {
+    /// The four-ring app logo, drawn by MacPulse rather than taken from SF Symbols.
+    static let logo = "macpulse.logo"
     static let appIcons = ["waveform.path.ecg", "cpu", "memorychip", "gauge.with.dots.needle.67percent", "speedometer",
                            "chart.bar.fill", "chart.line.uptrend.xyaxis", "bolt.fill", "thermometer.medium", "fan",
                            "flame", "leaf", "atom", "sparkles", "moon.stars", "heart.fill", "star.fill",
@@ -237,7 +239,7 @@ struct MenuConfiguration: Codable, Equatable {
     }
     static var charts: Self {
         var c = Self()
-        c.widthMode = "fit"; c.alignment = "left"; c.separators = true; c.icon = "waveform.path.ecg"
+        c.widthMode = "fit"; c.alignment = "left"; c.separators = true; c.icon = MenuSymbols.logo
         c.widgets = [MenuWidget(.mini, "cpu", color: "blue", chart: .bar), MenuWidget(.mini, "memory", color: "green", chart: .ring),
                      MenuWidget(.mini, "power", color: "orange", chart: .line), MenuWidget(.stacked, "upload", "download")]
         return c
@@ -282,7 +284,7 @@ struct MenuConfiguration: Codable, Equatable {
         copy.widthMode = widthMode == "fit" ? "fit" : "uniform"
         copy.alignment = alignment == "left" ? "left" : "right"
         copy.iconPosition = iconPosition == "trailing" ? "trailing" : "leading"
-        if icon != "none" && !MenuSymbols.appIcons.contains(icon) { copy.icon = "none" }
+        if icon != "none" && icon != MenuSymbols.logo && !MenuSymbols.appIcons.contains(icon) { copy.icon = "none" }
         copy.widgets = Array(widgets.prefix(Self.maxWidgets)).map { widget in
             var w = widget
             if MenuMetric.find(w.metric) == nil || w.metric == "none" { w.metric = "cpu" }
@@ -626,9 +628,22 @@ struct MenuBarLayout {
                      baselineFonts: [line.labelFont, line.valueFont], right: !left)
             }
             var x: CGFloat = 4
+            func logo(in rect: NSRect, color: NSColor) {
+                // The app icon's four rings on its 100-unit grid: a faint track, then the filled part from 12 o'clock.
+                let k = rect.width / 100
+                for (cx, cy, fill) in [(31.0, 69.0, 0.7), (69.0, 69.0, 0.55), (31.0, 31.0, 0.8), (69.0, 31.0, 0.45)] {
+                    let center = CGPoint(x: rect.minX + cx * k, y: rect.minY + cy * k)
+                    context.setLineWidth(10 * k); context.setLineCap(.round)
+                    context.addArc(center: center, radius: 12 * k, startAngle: 0, endAngle: .pi * 2, clockwise: false)
+                    context.setStrokeColor(color.withAlphaComponent(0.35).cgColor); context.strokePath()
+                    context.addArc(center: center, radius: 12 * k, startAngle: .pi / 2, endAngle: .pi / 2 - .pi * 2 * fill, clockwise: true)
+                    context.setStrokeColor(color.cgColor); context.strokePath()
+                }
+            }
             func appIcon() {
-                let name = config.icon == "none" ? "waveform.path.ecg" : config.icon
-                symbol(name, in: NSRect(x: x, y: (height - 15) / 2, width: 15, height: 15), color: foreground)
+                let name = config.icon == "none" ? MenuSymbols.logo : config.icon
+                let rect = NSRect(x: x, y: (height - 15) / 2, width: 15, height: 15)
+                if name == MenuSymbols.logo { logo(in: rect, color: foreground) } else { symbol(name, in: rect, color: foreground) }
                 x += 20
             }
             if showsIcon && (config.iconPosition == "leading" || items.isEmpty) { appIcon() }
@@ -867,6 +882,7 @@ struct MenuBarEditor: View {
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 38), spacing: 6)], spacing: 6) {
                     iconCell("none")
+                    iconCell(MenuSymbols.logo)
                     ForEach(MenuSymbols.appIcons, id: \.self) { iconCell($0) }
                 }
                 Text("没有小部件时始终保留图标，方便点击打开面板。").font(.subheadline).foregroundStyle(.secondary)
@@ -881,14 +897,16 @@ struct MenuBarEditor: View {
         let selected = monitor.menuConfiguration.icon == name
         return Button { monitor.menuConfiguration.icon = name } label: {
             Group {
-                if name == "none" { Text("无").font(.callout) } else { Image(systemName: name).font(.system(size: 15)) }
+                if name == "none" { Text("无").font(.callout) }
+                else if name == MenuSymbols.logo { LogoGlyph().frame(width: 16, height: 16) }
+                else { Image(systemName: name).font(.system(size: 15)) }
             }
             .frame(width: 38, height: 32)
             .background(selected ? Color.accentColor.opacity(0.2) : Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 1.5))
             .contentShape(Rectangle())
-        }.buttonStyle(.plain).help(name == "none" ? "不显示图标" : name)
-            .accessibilityLabel(name == "none" ? "不显示图标" : name)
+        }.buttonStyle(.plain).help(name == "none" ? "不显示图标" : name == MenuSymbols.logo ? "MacPulse 图标" : name)
+            .accessibilityLabel(name == "none" ? "不显示图标" : name == MenuSymbols.logo ? "MacPulse 图标" : name)
             .accessibilityAddTraits(selected ? .isSelected : [])
     }
 

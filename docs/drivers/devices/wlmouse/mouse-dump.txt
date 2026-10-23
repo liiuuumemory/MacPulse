@@ -1,0 +1,3 @@
+WLMOUSE WLMOUSE MINI PRO 8K RECEIVER PID 0xA868 model 花•兽 Mini PRO
+  battery 46% charging false
+  WLMouseSettings(profile: 1, profileCount: 3, profileNames: ["常规", "极限", ""], stages: [800], stagesY: [800], activeStage: 1, pollingRate: 1000, lod: 1.0, lodMode: 0, debounce: 0, motionSync: false, angleSnap: false, rippleControl: false, hyperMode: false, trackingMode: false, independentXY: true, angleTune: 0, sleepSeconds: 60)

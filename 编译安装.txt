@@ -1,6 +1,7 @@
-MacPulse 2.01 源码编译安装 — Apple Silicon
+MacPulse 3.0 源码编译安装 — Apple Silicon
 
-要求：M 系列芯片 Mac，macOS 14 或更高版本。
+要求：M 系列芯片 Mac，macOS 26 或更高版本。
+还在 macOS 14 或 15 上的话，请用 2.01：获取源码后先运行 git checkout v2.01，再按下面的步骤编译。
 无需第三方依赖，也无需购买 Apple 开发者账号。
 
 1. 安装 Apple 命令行开发工具
@@ -34,7 +35,7 @@ bash build.sh "$HOME/Applications"
 open "$HOME/Applications/MacPulse.app"
 
 程序安装到你个人目录下的 Applications 文件夹。
-应用常驻顶部菜单栏，不显示 Dock 图标；点击状态数字打开面板，底部齿轮打开设置。
+应用常驻顶部菜单栏，不显示 Dock 图标；左键点菜单栏里的 MacPulse 打开面板，右键可以打开设置、切换布局预设或退出，面板底部的齿轮也能打开设置。
 编译脚本会在这台 Mac 上生成 arm64 程序并进行本地 ad-hoc 签名和签名验证。
 这不是 Apple Developer ID 签名或公证。
 构建不需要下载第三方库，也不需要配置 API 密钥。
@@ -57,3 +58,5 @@ build.sh：编译、打包和本地签名脚本。
 Info.plist：应用元数据。
 AppIcon.icns：应用图标。
 README.md：功能说明、数据来源与实现细节。
+CHANGELOG.md：各版本更新记录。
+docs/：README 配图，以及鼠标和键盘驱动的协议资料（docs/drivers）。

@@ -1,0 +1,215 @@
+{
+  "name": "BNK 16",
+  "vendorId": "0x1A86",
+  "productId": "0xFC16",
+    "matrix": {
+    "rows": 5,
+    "cols": 5
+  },
+  "customKeycodes": [
+    {"name": "backup", "title": "backup", "shortName": "BKP"},
+    {"name": "backup", "title": "backup", "shortName": "BKP"},
+    {"name": "backup", "title": "backup", "shortName": "BKP"},
+    {"name": "usb mode", "title": "usb mode", "shortName": "USB"},
+    {"name": "backup", "title": "backup", "shortName": "backup"},
+    {"name": "Close RGB", "title": "Close RGB", "shortName": "cRGB"},
+    {"name": "Open RGB", "title": "Open RGB", "shortName": "oRGB"},
+    {"name": "Reset", "title": "Reset", "shortName": "Rst"},
+    {"name": "Clean EEPROM", "title": "Clean EEPROM", "shortName": "cEE"},
+    {"name": "Update", "title": "Update", "shortName": "Upda"},
+    {"name": "backup", "title": "backup", "shortName": "BKP"},
+    {"name": "Light+", "title": "Light+", "shortName": "RGB+"},
+    {"name": "Light-", "title": "Light-", "shortName": "RGB-"},
+    {"name": "Magnetic Force +", "title": "Magnetic Force +", "shortName": "MF+"},
+    {"name": "Magnetic Force -", "title": "Magnetic Force -", "shortName": "MF-"},
+    {"name": "Actuation Point +", "title": "Actuation Point +", "shortName": "AP+"}
+  ],
+  
+  "menus": [
+    {
+      "label": "Configurations",
+      "content": [
+        {
+          "label": "Lighting",
+          "content": [
+            {
+              "label": "Effect",
+              "type": "dropdown",
+              "options": [
+                ["OFF", 0],
+                ["Rainbow", 1],
+                ["Breath", 2],
+                ["Marquee", 3],
+                ["Solid", 4],
+                ["Cycle effect", 5],
+                ["Meteor effect", 6],
+                ["wave flow", 7],
+                ["ripple effect", 8],
+                ["starry night", 9],
+                ["flowing stream", 10],
+                ["follow me", 11],
+                ["layered waves", 12],
+                ["sine wave", 13],
+                ["color spring", 14],
+                ["gentle fade", 15],
+                ["flower garden", 16],
+                ["double effect", 17],
+                ["peak return", 18],
+                ["color cross", 19],
+                ["snow flurry", 20]
+              ],
+              "content": ["id_LED_Style", 1, 1]
+            },
+            {
+              "label": "Brightness",
+              "type": "range",
+              "options": [1, 255],
+              "content": ["id_LED_Brightness", 1, 2]
+            },
+            {
+              "showIf": "{id_LED_Style} > 0",
+              "label": "Effect Speed",
+              "type": "range",
+              "options": [1, 5],
+              "content": ["id_rgblight_speed", 1, 3]
+            },
+            {
+              "showIf": "{id_LED_Style} == 4",
+              "label": "Color",
+              "type": "color",
+              "content": ["id_rgblight_color", 1, 4]
+            }
+          ]
+        },
+        {
+          "label": "touch feeling",
+          "content": [
+            {
+              "label": "*base intensity",
+              "type": "dropdown",
+              "options": [
+                ["10%", 2],
+                ["20%", 4],
+                ["30%", 6],
+                ["35%", 7],
+                ["40%", 8],
+                ["45%", 9],
+                ["50%", 10],
+                ["55%", 11],
+                ["60%", 12],
+                ["70%", 14],
+                ["80%", 16]
+              ],
+              "content": ["id_intensity_device", 2, 1]
+            },
+            {
+              "label": "rise time",
+              "type": "dropdown",
+              "options": [
+                ["4ms", 4],
+                ["5ms", 5],
+                ["6ms", 6],
+                ["7ms", 7],
+                ["8ms", 8],
+                ["9ms", 9],
+                ["10ms", 10]
+              ],
+              "content": ["id_rise_device", 2, 2]
+            },
+            {
+              "label": "fall time",
+              "type": "dropdown",
+              "options": [
+                ["6ms", 6],
+                ["7ms", 7],
+                ["8ms", 8],
+                ["9ms", 9],
+                ["10ms", 10],
+                ["11ms", 11],
+                ["12ms", 12]
+              ],
+              "content": ["id_fall_device", 2, 3]
+            },
+            {
+              "label": "sustain time",
+              "type": "dropdown",
+              "options": [
+                ["2ms", 2],
+                ["3ms", 3],
+                ["4ms", 4],
+                ["5ms", 5],
+                ["6ms", 6]
+              ],
+              "content": ["id_sustain_device", 2, 4]
+            },
+            {
+              "label": "*frequency",
+              "type": "dropdown",
+              "options": [
+                ["100Hz", 10],
+                ["150Hz", 15],
+                ["160Hz", 16],
+                ["170Hz", 17],
+                ["180Hz", 18],
+                ["190Hz", 19],
+                ["200Hz", 20],
+                ["210Hz", 21],
+                ["220Hz", 22],
+                ["230Hz", 23],
+                ["240Hz", 24],
+                ["250Hz", 25],
+                ["260Hz", 26],
+                ["270Hz", 27],
+                ["280Hz", 28],
+                ["290Hz", 29],
+                ["300Hz", 30],
+                ["350Hz", 35]
+              ],
+              "content": ["id_frequency_device", 2, 5]
+            },
+            {
+              "label": "Save data",
+              "type": "button",
+              "options": [1],
+              "content": ["id_save_button", 2, 6]
+            }
+          ]
+        },
+        {
+          "label": "Device settings",
+          "content": [
+            {
+              "label": "Reboot device",
+              "type": "button",
+              "options": [1],
+              "content": ["id_reset_button", 3, 1]
+            },
+            {
+              "label": "factory reset",
+              "type": "button",
+              "options": [1],
+              "content": ["id_reset_button", 3, 2]
+            },
+            {
+              "label": "upgrade mode",
+              "type": "button",
+              "options": [1],
+              "content": ["id_reset_button", 3, 3]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+
+  "layouts": {
+    "labels": [],
+    "keymap": [
+      ["0,0","0,1","0,2","0,3"],
+      ["1,0","1,1","1,2","1,3"],
+      ["2,0","2,1","2,2","2,3"],
+      ["3,0","3,1","3,2","3,3"],
+      [{"x":4.5,"y":-4,"h":1.0,"w":1.0},"4,0\n\n\n\n\n\n\n\n\ne0",{"x":1.0,"y":0,"h":1.0,"w":1.0},"4,1\n\n\n\n\n\n\n\n\ne1",{"x":-3.0,"y":1.0,"h":3.0,"w":3.0},{"a":7},"e2"]
+    ]
+  }
+}

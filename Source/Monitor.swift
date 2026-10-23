@@ -44,6 +44,8 @@ final class Monitor: ObservableObject {
     private var peripheralQueue: DispatchQueue { DeviceIO.queue }
     /// Mouse settings for the settings window; shares the device queue with battery polling.
     let mice = MouseCenter()
+    /// Wired keyboards and their VIA settings, for the 外设 page and the panel.
+    let keyboards = KeyboardCenter()
     /// Optional fan control; does nothing until the user turns it on.
     let fan = FanController()
     @Published var chip = "正在读取硬件…"
@@ -72,6 +74,31 @@ final class Monitor: ObservableObject {
     @Published var selectedInterface: String {
         didSet { UserDefaults.standard.set(selectedInterface, forKey: "interface"); history.removeAll() }
     }
+    /// Up to three volume ids shown on the panel, in order; nil until chosen in Settings, which shows the default set.
+    @Published var panelDisks: [String]? {
+        didSet { UserDefaults.standard.set(panelDisks, forKey: "panel.disks") }
+    }
+    /// Names of volumes seen before, so a chosen drive that is unplugged can still be listed in Settings.
+    @Published private(set) var knownVolumes: [String: String] {
+        didSet { UserDefaults.standard.set(knownVolumes, forKey: "panel.knownVolumes") }
+    }
+    static let maxPanelDisks = 3
+    /// The startup disk first, then attached drives, up to three.
+    static func defaultDisks(_ volumes: [VolumeInfo]) -> [VolumeInfo] { Array(volumes.prefix(maxPanelDisks)) }
+    /// What the panel's disk card shows: the chosen volumes that are connected, in the chosen order.
+    var panelVolumes: [VolumeInfo] {
+        let all = sample.volumes
+        guard let chosen = panelDisks else { return Self.defaultDisks(all) }
+        return chosen.compactMap { id in all.first { $0.id == id } }
+    }
+    /// Panel glass: "system" follows the system's Liquid Glass setting, "custom" uses `glassTint`.
+    @Published var glassMode: String {
+        didSet { UserDefaults.standard.set(glassMode, forKey: "panel.glassMode") }
+    }
+    /// 0 is the clearest panel, 1 the most tinted; used when `glassMode` is "custom".
+    @Published var glassTint: Double {
+        didSet { UserDefaults.standard.set(glassTint, forKey: "panel.glassTint") }
+    }
     @Published var pinned = false
     @Published var loginEnabled = SMAppService.mainApp.status == .enabled
     @Published var settingsMessage = ""
@@ -83,7 +110,9 @@ final class Monitor: ObservableObject {
     private var observers: [NSObjectProtocol] = []
     private var generation: UInt64 = 0
     private var viewers = Set<String>()
-    private var detailed = false // metrics queue only
+    /// The settings page on screen; some pages need more than the summary.
+    private var settingsPage: String?
+    private var detail: SampleDetail = [] // metrics queue only
     private var screensAsleep = false
     var onChange: (() -> Void)?
     var hasVisibleViews: Bool { !viewers.isEmpty }
@@ -104,6 +133,16 @@ final class Monitor: ObservableObject {
         menuPresets = presets.prefix(MenuLayoutPreset.maxCount).map { var p = $0; p.configuration = p.configuration.sanitized(); return p }
         menuPresetSource = UserDefaults.standard.string(forKey: "menuPresets.source")
         selectedInterface = UserDefaults.standard.string(forKey: "interface") ?? "auto"
+        panelDisks = CommandLine.arguments.contains("--snapshot") ? nil : (UserDefaults.standard.array(forKey: "panel.disks") as? [String]).map { Array($0.prefix(Self.maxPanelDisks)) }
+        knownVolumes = UserDefaults.standard.dictionary(forKey: "panel.knownVolumes") as? [String: String] ?? [:]
+        // Snapshots keep the default look (or `--snapshot-glass system`) whatever this Mac has chosen.
+        let snapshot = CommandLine.arguments.contains("--snapshot")
+        let flag = CommandLine.arguments.firstIndex(of: "--snapshot-glass")
+        let requested = flag.flatMap { $0 + 1 < CommandLine.arguments.count ? CommandLine.arguments[$0 + 1] : nil }
+        let mode = snapshot ? requested : UserDefaults.standard.string(forKey: "panel.glassMode")
+        glassMode = mode == "system" ? "system" : "custom"
+        let tint = snapshot ? requested.flatMap(Double.init) : UserDefaults.standard.object(forKey: "panel.glassTint") as? Double
+        glassTint = min(1, max(0, tint ?? 0.5))
         if start {
             restart()
             let center = NSWorkspace.shared.notificationCenter
@@ -172,8 +211,20 @@ final class Monitor: ObservableObject {
         if visible { objectWillChange.send(); viewers.insert(id) } else { viewers.remove(id) }
         // Opening a view refreshes accessory batteries if the last read is older than 15 seconds.
         if visible, timer != nil, peripheralsReadAt.map({ Date().timeIntervalSince($0) > 15 }) ?? true { readPeripherals() }
-        let detailed = !viewers.isEmpty
-        queue.async { [weak self] in self?.detailed = detailed }
+        updateDetail()
+    }
+    func setSettingsPage(_ page: String) {
+        guard settingsPage != page else { return }
+        settingsPage = page
+        updateDetail()
+    }
+    private func updateDetail() {
+        let snapshot = viewers.contains("snapshot")
+        let page = viewers.contains("settings") ? settingsPage : nil
+        var detail: SampleDetail = viewers.isEmpty ? [] : .live
+        if snapshot || viewers.contains("panel") || page == "processes" { detail.insert(.processes) }
+        if snapshot || page == "sensors" { detail.insert(.allSensors) }
+        queue.async { [weak self] in self?.detail = detail }
     }
     func restart(reset: Bool = false) {
         stop()
@@ -189,7 +240,7 @@ final class Monitor: ObservableObject {
         source.schedule(deadline: .now(), repeating: period, leeway: .milliseconds(max(20, Int(period * 100))))
         source.setEventHandler { [weak self] in
             guard let self, let collector = self.collector else { return }
-            let value = collector.sample(detailed: self.detailed)
+            let value = collector.sample(detail: self.detail)
             let chip = collector.chip, model = collector.model
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.generation == version else { return }
@@ -247,6 +298,9 @@ final class Monitor: ObservableObject {
             batteryHistory = history
             if let data = try? JSONEncoder().encode(history) { UserDefaults.standard.set(data, forKey: "peripherals.history.v1") }
         }
+        // Sample accessories for README screenshots, after the history is saved so they never reach it.
+        // Real Bluetooth names often carry the owner's name ("Someone's Magic Keyboard"), so screenshots leave them out.
+        if !Self.demoPeripherals.isEmpty { merged = merged.filter { !$0.key.hasPrefix("bt-") } + Self.demoPeripherals }
         // Timestamps move every second; only a new device, level, charge state or staleness is worth a redraw.
         let changed = merged.count != peripherals.count || zip(merged, peripherals).contains { !$0.sameReading(as: $1) }
         peripherals = merged
@@ -269,6 +323,12 @@ final class Monitor: ObservableObject {
                 ProcessUsage(pid: 103, name: "Final Cut Pro", cpu: 9.2, memory: 1.6e9), ProcessUsage(pid: 104, name: "Music", cpu: 2.1, memory: 3.1e8),
                 ProcessUsage(pid: 105, name: "Finder", cpu: 0.8, memory: 1.9e8)]
     }()
+    /// `--snapshot-demo` also lists two sample accessories, so the devices page shows several cards.
+    private static let demoPeripherals: [PeripheralBattery] = {
+        guard CommandLine.arguments.contains("--snapshot"), CommandLine.arguments.contains("--snapshot-demo") else { return [] }
+        return [PeripheralBattery(key: "bt-demo-keyboard", name: "妙控键盘", percent: 82, charging: false, updated: Date(), source: "蓝牙"),
+                PeripheralBattery(key: "bt-demo-trackpad", name: "妙控 Trackpad", percent: 47, charging: true, updated: Date(), source: "蓝牙")]
+    }()
     func accept(_ value: Sample) {
         var value = value
         if let fans = Self.simulatedFans { value.smcAvailable = true; value.fans = fans }
@@ -280,7 +340,19 @@ final class Monitor: ObservableObject {
         }
         lastEnergyDate = value.date; lastWatts = value.watts
         sample = value
+        let names = Dictionary(value.volumes.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+        if !CommandLine.arguments.contains("--snapshot"), names.contains(where: { knownVolumes[$0.key] != $0.value }) { knownVolumes.merge(names) { _, new in new } }
         let net = networkRates
+        // Sample curves fill the last two minutes in demo snapshots, which run for a few seconds only.
+        if Self.demoProcesses != nil, history.isEmpty {
+            for step in stride(from: 118.0, to: 0, by: -2) {
+                let wave = sin(step / 9) * 0.5 + 0.5
+                history.append(HistoryPoint(date: value.date.addingTimeInterval(-step), cpu: value.cpu, gpu: value.gpu, memory: nil,
+                                            watts: (value.watts ?? 12) * (0.7 + 0.6 * wave), temperature: value.cpuTemp,
+                                            download: 40_000 * (0.3 + wave + (step.truncatingRemainder(dividingBy: 14) == 0 ? 1.4 : 0)),
+                                            upload: 9_000 * (0.4 + 0.8 * (1 - wave))))
+            }
+        }
         history.append(HistoryPoint(date: value.date, cpu: value.cpu, gpu: value.gpu,
                                     memory: value.memoryValid && value.memoryTotal > 0 ? value.memoryUsed / value.memoryTotal * 100 : nil, watts: value.watts, temperature: value.cpuTemp, download: net.0, upload: net.1))
         history.removeAll { $0.date < value.date.addingTimeInterval(-120) }

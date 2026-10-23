@@ -1,0 +1,1029 @@
+[
+  {
+    "customKeycodeBase" : "0x7F00",
+    "customKeycodes" : [
+      {
+        "hiddenInPicker" : false,
+        "keycode" : "0x7F00",
+        "name" : "锁定 Win 键",
+        "short" : "Win 锁"
+      },
+      {
+        "hiddenInPicker" : false,
+        "keycode" : "0x7F01",
+        "name" : "切换 macOS 键位",
+        "short" : "Mac"
+      },
+      {
+        "hiddenInPicker" : false,
+        "keycode" : "0x7F02",
+        "name" : "调度中心（Mission Control）",
+        "short" : "调度"
+      },
+      {
+        "hiddenInPicker" : false,
+        "keycode" : "0x7F03",
+        "name" : "启动台（Launchpad）",
+        "short" : "启动台"
+      }
+    ],
+    "keys" : [
+      {
+        "col" : 0,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 0,
+        "y" : 0
+      },
+      {
+        "col" : 1,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 1,
+        "y" : 0
+      },
+      {
+        "col" : 2,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 2,
+        "y" : 0
+      },
+      {
+        "col" : 3,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 3,
+        "y" : 0
+      },
+      {
+        "col" : 4,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 4,
+        "y" : 0
+      },
+      {
+        "col" : 5,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 5,
+        "y" : 0
+      },
+      {
+        "col" : 6,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 6,
+        "y" : 0
+      },
+      {
+        "col" : 7,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 7,
+        "y" : 0
+      },
+      {
+        "col" : 8,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 8,
+        "y" : 0
+      },
+      {
+        "col" : 9,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 9,
+        "y" : 0
+      },
+      {
+        "col" : 10,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 10,
+        "y" : 0
+      },
+      {
+        "col" : 11,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 11,
+        "y" : 0
+      },
+      {
+        "col" : 12,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 12,
+        "y" : 0
+      },
+      {
+        "col" : 13,
+        "h" : 1,
+        "row" : 0,
+        "w" : 2,
+        "x" : 13,
+        "y" : 0
+      },
+      {
+        "col" : 14,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 15,
+        "y" : 0
+      },
+      {
+        "col" : 0,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1.5,
+        "x" : 0,
+        "y" : 1
+      },
+      {
+        "col" : 1,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 1.5,
+        "y" : 1
+      },
+      {
+        "col" : 2,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 2.5,
+        "y" : 1
+      },
+      {
+        "col" : 3,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 3.5,
+        "y" : 1
+      },
+      {
+        "col" : 4,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 4.5,
+        "y" : 1
+      },
+      {
+        "col" : 5,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 5.5,
+        "y" : 1
+      },
+      {
+        "col" : 6,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 6.5,
+        "y" : 1
+      },
+      {
+        "col" : 7,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 7.5,
+        "y" : 1
+      },
+      {
+        "col" : 8,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 8.5,
+        "y" : 1
+      },
+      {
+        "col" : 9,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 9.5,
+        "y" : 1
+      },
+      {
+        "col" : 10,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 10.5,
+        "y" : 1
+      },
+      {
+        "col" : 11,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 11.5,
+        "y" : 1
+      },
+      {
+        "col" : 12,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 12.5,
+        "y" : 1
+      },
+      {
+        "col" : 13,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1.5,
+        "x" : 13.5,
+        "y" : 1
+      },
+      {
+        "col" : 14,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 15,
+        "y" : 1
+      },
+      {
+        "col" : 0,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1.75,
+        "x" : 0,
+        "y" : 2
+      },
+      {
+        "col" : 1,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 1.75,
+        "y" : 2
+      },
+      {
+        "col" : 2,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 2.75,
+        "y" : 2
+      },
+      {
+        "col" : 3,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 3.75,
+        "y" : 2
+      },
+      {
+        "col" : 4,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 4.75,
+        "y" : 2
+      },
+      {
+        "col" : 5,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 5.75,
+        "y" : 2
+      },
+      {
+        "col" : 6,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 6.75,
+        "y" : 2
+      },
+      {
+        "col" : 7,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 7.75,
+        "y" : 2
+      },
+      {
+        "col" : 8,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 8.75,
+        "y" : 2
+      },
+      {
+        "col" : 9,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 9.75,
+        "y" : 2
+      },
+      {
+        "col" : 10,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 10.75,
+        "y" : 2
+      },
+      {
+        "col" : 11,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 11.75,
+        "y" : 2
+      },
+      {
+        "col" : 13,
+        "h" : 1,
+        "row" : 2,
+        "w" : 2.25,
+        "x" : 12.75,
+        "y" : 2
+      },
+      {
+        "col" : 14,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 15,
+        "y" : 2
+      },
+      {
+        "col" : 0,
+        "h" : 1,
+        "row" : 3,
+        "w" : 2.25,
+        "x" : 0,
+        "y" : 3
+      },
+      {
+        "col" : 1,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 2.25,
+        "y" : 3
+      },
+      {
+        "col" : 2,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 3.25,
+        "y" : 3
+      },
+      {
+        "col" : 3,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 4.25,
+        "y" : 3
+      },
+      {
+        "col" : 4,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 5.25,
+        "y" : 3
+      },
+      {
+        "col" : 5,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 6.25,
+        "y" : 3
+      },
+      {
+        "col" : 6,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 7.25,
+        "y" : 3
+      },
+      {
+        "col" : 7,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 8.25,
+        "y" : 3
+      },
+      {
+        "col" : 8,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 9.25,
+        "y" : 3
+      },
+      {
+        "col" : 9,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 10.25,
+        "y" : 3
+      },
+      {
+        "col" : 10,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 11.25,
+        "y" : 3
+      },
+      {
+        "col" : 12,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1.75,
+        "x" : 12.25,
+        "y" : 3
+      },
+      {
+        "col" : 13,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 14,
+        "y" : 3
+      },
+      {
+        "col" : 14,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 15,
+        "y" : 3
+      },
+      {
+        "col" : 0,
+        "h" : 1,
+        "row" : 4,
+        "w" : 1.25,
+        "x" : 0,
+        "y" : 4
+      },
+      {
+        "col" : 1,
+        "h" : 1,
+        "row" : 4,
+        "w" : 1.25,
+        "x" : 1.25,
+        "y" : 4
+      },
+      {
+        "col" : 2,
+        "h" : 1,
+        "row" : 4,
+        "w" : 1.25,
+        "x" : 2.5,
+        "y" : 4
+      },
+      {
+        "col" : 6,
+        "h" : 1,
+        "row" : 4,
+        "w" : 6.25,
+        "x" : 3.75,
+        "y" : 4
+      },
+      {
+        "col" : 7,
+        "h" : 1,
+        "row" : 4,
+        "w" : 1.25,
+        "x" : 10,
+        "y" : 4
+      },
+      {
+        "col" : 11,
+        "h" : 1,
+        "row" : 4,
+        "w" : 1.25,
+        "x" : 11.25,
+        "y" : 4
+      },
+      {
+        "col" : 12,
+        "h" : 1,
+        "row" : 4,
+        "w" : 1,
+        "x" : 13,
+        "y" : 4
+      },
+      {
+        "col" : 13,
+        "h" : 1,
+        "row" : 4,
+        "w" : 1,
+        "x" : 14,
+        "y" : 4
+      },
+      {
+        "col" : 14,
+        "h" : 1,
+        "row" : 4,
+        "w" : 1,
+        "x" : 15,
+        "y" : 4
+      }
+    ],
+    "knobs" : [
+
+    ],
+    "layoutUnits" : {
+      "height" : 5,
+      "width" : 16
+    },
+    "lighting" : {
+      "brightness" : [
+        0,
+        255
+      ],
+      "brightnessValueId" : 1,
+      "channel" : 2,
+      "colorEffects" : [
+        1,
+        2,
+        3,
+        4,
+        5,
+        37
+      ],
+      "colorValueId" : 4,
+      "effects" : [
+        {
+          "name" : "关闭",
+          "value" : 0
+        },
+        {
+          "name" : "常亮",
+          "value" : 1
+        },
+        {
+          "name" : "呼吸 · 慢",
+          "value" : 2
+        },
+        {
+          "name" : "呼吸",
+          "value" : 3
+        },
+        {
+          "name" : "呼吸 · 快",
+          "value" : 4
+        },
+        {
+          "name" : "呼吸 · 最快",
+          "value" : 5
+        },
+        {
+          "name" : "彩虹 · 慢",
+          "value" : 6
+        },
+        {
+          "name" : "彩虹",
+          "value" : 7
+        },
+        {
+          "name" : "彩虹 · 快",
+          "value" : 8
+        },
+        {
+          "name" : "彩虹漩涡",
+          "value" : 9
+        },
+        {
+          "name" : "闪烁",
+          "value" : 37
+        }
+      ],
+      "effectValueId" : 2,
+      "indicatorOnly" : true
+    },
+    "macroKeycodeBase" : "0x7702",
+    "matrix" : {
+      "cols" : 15,
+      "rows" : 5
+    },
+    "name" : "BUFF67v3r2",
+    "productId" : "0xB710",
+    "source" : "VIA 定义：BUFF67v3r2.json",
+    "vendorId" : "0xB710",
+    "viaProtocol" : 11
+  },
+  {
+    "customKeycodeBase" : "0x7E00",
+    "customKeycodes" : [
+      {
+        "hiddenInPicker" : true,
+        "keycode" : "0x7E00",
+        "name" : "备用",
+        "short" : "BKP"
+      },
+      {
+        "hiddenInPicker" : true,
+        "keycode" : "0x7E01",
+        "name" : "备用",
+        "short" : "BKP"
+      },
+      {
+        "hiddenInPicker" : true,
+        "keycode" : "0x7E02",
+        "name" : "备用",
+        "short" : "BKP"
+      },
+      {
+        "hiddenInPicker" : true,
+        "keycode" : "0x7E03",
+        "name" : "USB 模式",
+        "short" : "USB"
+      },
+      {
+        "hiddenInPicker" : true,
+        "keycode" : "0x7E04",
+        "name" : "备用",
+        "short" : "BKP"
+      },
+      {
+        "hiddenInPicker" : false,
+        "keycode" : "0x7E05",
+        "name" : "关闭灯光",
+        "short" : "关灯"
+      },
+      {
+        "hiddenInPicker" : false,
+        "keycode" : "0x7E06",
+        "name" : "打开灯光",
+        "short" : "开灯"
+      },
+      {
+        "hiddenInPicker" : true,
+        "keycode" : "0x7E07",
+        "name" : "重启键盘",
+        "short" : "重启"
+      },
+      {
+        "hiddenInPicker" : true,
+        "keycode" : "0x7E08",
+        "name" : "清空 EEPROM",
+        "short" : "清空"
+      },
+      {
+        "hiddenInPicker" : true,
+        "keycode" : "0x7E09",
+        "name" : "进入升级模式",
+        "short" : "升级"
+      },
+      {
+        "hiddenInPicker" : true,
+        "keycode" : "0x7E0A",
+        "name" : "备用",
+        "short" : "BKP"
+      },
+      {
+        "hiddenInPicker" : false,
+        "keycode" : "0x7E0B",
+        "name" : "灯光亮度 +",
+        "short" : "灯 +"
+      },
+      {
+        "hiddenInPicker" : false,
+        "keycode" : "0x7E0C",
+        "name" : "灯光亮度 −",
+        "short" : "灯 −"
+      },
+      {
+        "hiddenInPicker" : false,
+        "keycode" : "0x7E0D",
+        "name" : "触感力度 +",
+        "short" : "触感 +"
+      },
+      {
+        "hiddenInPicker" : false,
+        "keycode" : "0x7E0E",
+        "name" : "触感力度 −",
+        "short" : "触感 −"
+      },
+      {
+        "hiddenInPicker" : false,
+        "keycode" : "0x7E0F",
+        "name" : "触发点 +",
+        "short" : "触发 +"
+      }
+    ],
+    "keys" : [
+      {
+        "col" : 0,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 0,
+        "y" : 0
+      },
+      {
+        "col" : 1,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 1,
+        "y" : 0
+      },
+      {
+        "col" : 2,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 2,
+        "y" : 0
+      },
+      {
+        "col" : 3,
+        "h" : 1,
+        "row" : 0,
+        "w" : 1,
+        "x" : 3,
+        "y" : 0
+      },
+      {
+        "col" : 0,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 0,
+        "y" : 1
+      },
+      {
+        "col" : 1,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 1,
+        "y" : 1
+      },
+      {
+        "col" : 2,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 2,
+        "y" : 1
+      },
+      {
+        "col" : 3,
+        "h" : 1,
+        "row" : 1,
+        "w" : 1,
+        "x" : 3,
+        "y" : 1
+      },
+      {
+        "col" : 0,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 0,
+        "y" : 2
+      },
+      {
+        "col" : 1,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 1,
+        "y" : 2
+      },
+      {
+        "col" : 2,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 2,
+        "y" : 2
+      },
+      {
+        "col" : 3,
+        "h" : 1,
+        "row" : 2,
+        "w" : 1,
+        "x" : 3,
+        "y" : 2
+      },
+      {
+        "col" : 0,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 0,
+        "y" : 3
+      },
+      {
+        "col" : 1,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 1,
+        "y" : 3
+      },
+      {
+        "col" : 2,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 2,
+        "y" : 3
+      },
+      {
+        "col" : 3,
+        "h" : 1,
+        "row" : 3,
+        "w" : 1,
+        "x" : 3,
+        "y" : 3
+      }
+    ],
+    "knobs" : [
+      {
+        "index" : 0,
+        "press" : {
+          "col" : 0,
+          "row" : 4
+        },
+        "size" : 1,
+        "x" : 4.5,
+        "y" : 0
+      },
+      {
+        "index" : 1,
+        "press" : {
+          "col" : 1,
+          "row" : 4
+        },
+        "size" : 1,
+        "x" : 6.5,
+        "y" : 0
+      },
+      {
+        "index" : 2,
+        "size" : 3,
+        "x" : 4.5,
+        "y" : 1
+      }
+    ],
+    "layoutUnits" : {
+      "height" : 4,
+      "width" : 7.5
+    },
+    "lighting" : {
+      "brightness" : [
+        1,
+        255
+      ],
+      "brightnessValueId" : 2,
+      "channel" : 1,
+      "colorEffects" : [
+        4
+      ],
+      "colorValueId" : 4,
+      "effects" : [
+        {
+          "name" : "关闭",
+          "value" : 0
+        },
+        {
+          "name" : "彩虹",
+          "value" : 1
+        },
+        {
+          "name" : "呼吸",
+          "value" : 2
+        },
+        {
+          "name" : "跑马灯",
+          "value" : 3
+        },
+        {
+          "name" : "常亮",
+          "value" : 4
+        },
+        {
+          "name" : "循环",
+          "value" : 5
+        },
+        {
+          "name" : "流星",
+          "value" : 6
+        },
+        {
+          "name" : "波浪",
+          "value" : 7
+        },
+        {
+          "name" : "涟漪",
+          "value" : 8
+        },
+        {
+          "name" : "星空",
+          "value" : 9
+        },
+        {
+          "name" : "溪流",
+          "value" : 10
+        },
+        {
+          "name" : "跟随按键",
+          "value" : 11
+        },
+        {
+          "name" : "层叠波浪",
+          "value" : 12
+        },
+        {
+          "name" : "正弦波",
+          "value" : 13
+        },
+        {
+          "name" : "彩泉",
+          "value" : 14
+        },
+        {
+          "name" : "柔和渐隐",
+          "value" : 15
+        },
+        {
+          "name" : "花园",
+          "value" : 16
+        },
+        {
+          "name" : "双重效果",
+          "value" : 17
+        },
+        {
+          "name" : "峰值回落",
+          "value" : 18
+        },
+        {
+          "name" : "交叉色彩",
+          "value" : 19
+        },
+        {
+          "name" : "飘雪",
+          "value" : 20
+        }
+      ],
+      "effectValueId" : 1,
+      "indicatorOnly" : false,
+      "speed" : [
+        1,
+        5
+      ],
+      "speedValueId" : 3
+    },
+    "macroKeycodeBase" : "0x7700",
+    "matrix" : {
+      "cols" : 5,
+      "rows" : 5
+    },
+    "name" : "BNK 16",
+    "productId" : "0xFC16",
+    "source" : "官方配置器：via.yuxibin.top",
+    "vendorId" : "0x1A86",
+    "viaProtocol" : 12
+  }
+]

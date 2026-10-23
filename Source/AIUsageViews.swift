@@ -99,7 +99,9 @@ struct QuotaBar: View {
 struct AIQuotaSummary: View {
     @ObservedObject var usage: AIUsageMonitor
     var compact = true
-    private var provider: AIProvider { usage.selected }
+    /// The service to show; the selected one when nil.
+    var service: AIProvider? = nil
+    private var provider: AIProvider { service ?? usage.selected }
     var body: some View {
         // Countdowns advance on their own, not only when a new sample arrives.
         TimelineView(.periodic(from: .now, by: 30)) { context in summary(now: context.date) }
@@ -165,57 +167,126 @@ struct AIQuotaSummary: View {
     }
 }
 
+/// The panel's AI usage page: one card per service, today's use at a glance, the rest on hover.
 struct AIUsagePanel: View {
     @ObservedObject var usage: AIUsageMonitor
     var openSettings: () -> Void
-    /// On its own panel page the heatmap gets full-size cells.
-    var roomy = false
-    private var activity: TokenActivity { usage.activity[usage.selected] ?? TokenActivity() }
+    @AIViewState private var openCard: String?
     var body: some View {
-        VStack(alignment: .leading, spacing: roomy ? 12 : 6) {
-            HStack(spacing: 8) {
-                Text("AI 用量").font(PanelFont.heading)
-                ProviderPicker(usage: usage).controlSize(.small)
-                if let service = usage.status[usage.selected], service.degraded {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                        .help("\(usage.selected.title) 服务状态：\(service.label)（\(service.description)）")
-                        .accessibilityLabel("\(usage.selected.title) 服务状态：\(service.label)")
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(usage.providers) { provider in
+                HoverCard(id: provider.rawValue, open: $openCard) {
+                    summary(provider)
+                } detail: {
+                    detail(provider)
                 }
-                Spacer(minLength: 0)
-                Button { usage.preferencesTab = "ai"; openSettings() } label: { Image(systemName: "arrow.up.right.square") }
-                    .buttonStyle(.borderless).help("用量详情与额度设置").accessibilityLabel("用量详情与额度设置")
             }
-            HStack(spacing: 12) {
-                statistic("今日", activity.today, cost: activity.todayCost)
-                statistic("近 7 天", activity.week, cost: activity.weekCost)
-                statistic("累计", activity.total, cost: activity.totalCost)
-            }.help("费用按 API 公开标价估算，不等同于账单")
-            TokenHeatmap(activity: activity, color: usage.selected.color, compact: !roomy)
-            if roomy { DailyCostBars(activity: activity, color: usage.selected.color) }
-            if usage.selected.hasQuota { AIQuotaSummary(usage: usage) }
-            if roomy {
-                HStack(spacing: 14) {
-                    Button { usage.refresh() } label: { Label(usage.refreshing ? "刷新中…" : "刷新额度", systemImage: "arrow.clockwise") }
-                        .disabled(usage.refreshing).help("重新读取用量记录和账户额度")
-                    if usage.selected.hasQuota {
-                        Button {
-                            let fallback = URL(string: usage.selected == .codex ? "https://chatgpt.com/codex/settings/usage" : "https://claude.ai/settings/usage")!
-                            NSWorkspace.shared.open(usage.accounts[usage.selected]?.website ?? fallback)
-                        } label: { Label("打开用量网页", systemImage: "safari") }.help("在浏览器中打开账户用量页面")
+        }
+        .onAppear { if PanelCards.snapshotOpensFirst, openCard == nil { openCard = usage.providers.first?.rawValue } }
+    }
+    private func activity(_ provider: AIProvider) -> TokenActivity { usage.activity[provider] ?? TokenActivity() }
+    /// Every reading on a card opens that service's page in Settings, where the full details are.
+    private func open(_ provider: AIProvider) {
+        usage.selected = provider
+        usage.preferencesTab = "ai"
+        openSettings()
+    }
+    /// Remaining share of the custom budget or of the first account window, when one is known.
+    private func remaining(_ provider: AIProvider) -> Double? {
+        let budget = usage.budget(provider)
+        if budget.enabled, budget.total > 0 { return budget.remaining(at: Date()) / budget.total }
+        return usage.accounts[provider]?.windows.first?.remaining(at: Date()).map { $0 / 100 }
+    }
+    /// Always visible: the service, today's tokens and cost, and how much quota is left.
+    private func summary(_ provider: AIProvider) -> some View {
+        let activity = activity(provider)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Circle().fill(provider.color).frame(width: 8, height: 8)
+                Text(provider.title).font(PanelFont.heading)
+                if let service = usage.status[provider], service.degraded {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(.orange)
+                        .help("\(provider.title) 服务状态：\(service.label)（\(service.description)）")
+                }
+                Spacer(minLength: 6)
+                PanelLink(help: "在设置中查看 \(provider.title) 的用量") { open(provider) } label: {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(activity.loaded ? UsageFormat.tokens(activity.today) : "—").font(PanelFont.tile).monospacedDigit()
+                        Text(activity.loaded ? "今日 ≈ " + UsageFormat.amount(activity.todayCost, unit: "USD") : "今日").font(PanelFont.label)
+                            .foregroundStyle(.secondary).monospacedDigit()
                     }
-                    Spacer()
-                }.buttonStyle(.borderless).font(PanelFont.label)
+                }
+            }
+            if let fraction = remaining(provider) { QuotaBar(fraction: fraction) }
+        }
+    }
+    /// Opens on hover: three totals, half a year of activity as one picture, and the quota. Each opens Settings.
+    private func detail(_ provider: AIProvider) -> some View {
+        let activity = activity(provider)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 6) {
+                statistic(provider, "近 7 天", activity.week, cost: activity.weekCost, loaded: activity.loaded)
+                statistic(provider, "近 30 天", activity.month, cost: activity.monthCost, loaded: activity.loaded)
+                statistic(provider, "累计", activity.total, cost: activity.totalCost, loaded: activity.loaded)
+            }.help("费用按 API 公开标价估算，不等同于账单")
+            PanelLink(help: "在设置中查看每天的用量") { open(provider) } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Token 活动 · 近半年")
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                    }.font(PanelFont.label).foregroundStyle(.secondary)
+                    HeatmapThumbnail(activity: activity, color: provider.color).frame(height: 72)
+                }
+            }
+            if provider.hasQuota || usage.budget(provider).enabled {
+                PanelLink(help: "在设置中查看或设置额度") { open(provider) } label: {
+                    AIQuotaSummary(usage: usage, service: provider)
+                }
             }
         }
     }
-    private func statistic(_ title: String, _ value: Double, cost: Double) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(title).font(PanelFont.label).foregroundStyle(.secondary)
-            Text(activity.loaded ? UsageFormat.tokens(value) : "—").font(.system(size: 15, weight: .semibold, design: .rounded)).monospacedDigit()
-                .lineLimit(1).minimumScaleFactor(0.85)
-            Text(activity.loaded ? "≈ " + UsageFormat.amount(cost, unit: "USD") : " ").font(PanelFont.label).monospacedDigit()
-                .foregroundStyle(.secondary).lineLimit(1)
-        }.frame(width: (PanelLayout.width - 52) / 3, alignment: .leading)
+    private func statistic(_ provider: AIProvider, _ title: String, _ value: Double, cost: Double, loaded: Bool) -> some View {
+        PanelLink(help: "在设置中查看 \(provider.title) 的用量") { open(provider) } label: {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(PanelFont.label).foregroundStyle(.secondary)
+                Text(loaded ? UsageFormat.tokens(value) : "—").font(.system(size: 15, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Text(loaded ? "≈ " + UsageFormat.amount(cost, unit: "USD") : " ").font(PanelFont.label).monospacedDigit()
+                    .foregroundStyle(.secondary).lineLimit(1)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// Half a year of daily tokens drawn as one picture: cheap to show, so a card opens without a stall.
+/// The interactive grid with per-day details lives in Settings.
+struct HeatmapThumbnail: View {
+    let activity: TokenActivity
+    let color: Color
+    var body: some View {
+        Canvas { context, size in
+            let calendar = Calendar.current
+            let end = calendar.startOfDay(for: Date())
+            let weekday = (calendar.component(.weekday, from: end) + 5) % 7
+            guard let monday = calendar.date(byAdding: .day, value: -weekday, to: end),
+                  let first = calendar.date(byAdding: .day, value: -25 * 7, to: monday) else { return }
+            let values = Dictionary(activity.days.map { ($0.date, $0.tokens) }, uniquingKeysWith: +)
+            let maximum = max(1, activity.days.map(\.tokens).max() ?? 1)
+            let gap: CGFloat = 2
+            let side = min((size.width - gap * 25) / 26, (size.height - gap * 6) / 7)
+            let left = (size.width - (side * 26 + gap * 25)) / 2
+            for week in 0..<26 {
+                for day in 0..<7 {
+                    guard let date = calendar.date(byAdding: .day, value: week * 7 + day, to: first), date <= end else { continue }
+                    let value = values[date] ?? 0
+                    let rect = CGRect(x: left + CGFloat(week) * (side + gap), y: CGFloat(day) * (side + gap), width: side, height: side)
+                    let fill = value > 0 ? color.opacity(0.22 + 0.78 * log1p(value) / log1p(maximum)) : Color.secondary.opacity(0.09)
+                    context.fill(Path(roundedRect: rect, cornerRadius: 2), with: .color(fill))
+                }
+            }
+        }
+        .accessibilityLabel("近半年 Token 活动")
     }
 }
 
@@ -340,6 +411,7 @@ struct AIUsageSettingsView: View {
                     field("累计", activity.total, cost: activity.totalCost)
                 }
                 TokenHeatmap(activity: activity, color: usage.selected.color, compact: false)
+                DailyCostBars(activity: activity, color: usage.selected.color)
                 if !activity.models.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("按模型").font(.headline)

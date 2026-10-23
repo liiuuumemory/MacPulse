@@ -1,0 +1,892 @@
+{
+  "basic" : [
+    {
+      "keycode" : "0x0004",
+      "name" : "字母 A",
+      "short" : "A"
+    },
+    {
+      "keycode" : "0x0005",
+      "name" : "字母 B",
+      "short" : "B"
+    },
+    {
+      "keycode" : "0x0006",
+      "name" : "字母 C",
+      "short" : "C"
+    },
+    {
+      "keycode" : "0x0007",
+      "name" : "字母 D",
+      "short" : "D"
+    },
+    {
+      "keycode" : "0x0008",
+      "name" : "字母 E",
+      "short" : "E"
+    },
+    {
+      "keycode" : "0x0009",
+      "name" : "字母 F",
+      "short" : "F"
+    },
+    {
+      "keycode" : "0x000A",
+      "name" : "字母 G",
+      "short" : "G"
+    },
+    {
+      "keycode" : "0x000B",
+      "name" : "字母 H",
+      "short" : "H"
+    },
+    {
+      "keycode" : "0x000C",
+      "name" : "字母 I",
+      "short" : "I"
+    },
+    {
+      "keycode" : "0x000D",
+      "name" : "字母 J",
+      "short" : "J"
+    },
+    {
+      "keycode" : "0x000E",
+      "name" : "字母 K",
+      "short" : "K"
+    },
+    {
+      "keycode" : "0x000F",
+      "name" : "字母 L",
+      "short" : "L"
+    },
+    {
+      "keycode" : "0x0010",
+      "name" : "字母 M",
+      "short" : "M"
+    },
+    {
+      "keycode" : "0x0011",
+      "name" : "字母 N",
+      "short" : "N"
+    },
+    {
+      "keycode" : "0x0012",
+      "name" : "字母 O",
+      "short" : "O"
+    },
+    {
+      "keycode" : "0x0013",
+      "name" : "字母 P",
+      "short" : "P"
+    },
+    {
+      "keycode" : "0x0014",
+      "name" : "字母 Q",
+      "short" : "Q"
+    },
+    {
+      "keycode" : "0x0015",
+      "name" : "字母 R",
+      "short" : "R"
+    },
+    {
+      "keycode" : "0x0016",
+      "name" : "字母 S",
+      "short" : "S"
+    },
+    {
+      "keycode" : "0x0017",
+      "name" : "字母 T",
+      "short" : "T"
+    },
+    {
+      "keycode" : "0x0018",
+      "name" : "字母 U",
+      "short" : "U"
+    },
+    {
+      "keycode" : "0x0019",
+      "name" : "字母 V",
+      "short" : "V"
+    },
+    {
+      "keycode" : "0x001A",
+      "name" : "字母 W",
+      "short" : "W"
+    },
+    {
+      "keycode" : "0x001B",
+      "name" : "字母 X",
+      "short" : "X"
+    },
+    {
+      "keycode" : "0x001C",
+      "name" : "字母 Y",
+      "short" : "Y"
+    },
+    {
+      "keycode" : "0x001D",
+      "name" : "字母 Z",
+      "short" : "Z"
+    },
+    {
+      "keycode" : "0x001E",
+      "name" : "数字 1",
+      "short" : "1"
+    },
+    {
+      "keycode" : "0x001F",
+      "name" : "数字 2",
+      "short" : "2"
+    },
+    {
+      "keycode" : "0x0020",
+      "name" : "数字 3",
+      "short" : "3"
+    },
+    {
+      "keycode" : "0x0021",
+      "name" : "数字 4",
+      "short" : "4"
+    },
+    {
+      "keycode" : "0x0022",
+      "name" : "数字 5",
+      "short" : "5"
+    },
+    {
+      "keycode" : "0x0023",
+      "name" : "数字 6",
+      "short" : "6"
+    },
+    {
+      "keycode" : "0x0024",
+      "name" : "数字 7",
+      "short" : "7"
+    },
+    {
+      "keycode" : "0x0025",
+      "name" : "数字 8",
+      "short" : "8"
+    },
+    {
+      "keycode" : "0x0026",
+      "name" : "数字 9",
+      "short" : "9"
+    },
+    {
+      "keycode" : "0x0027",
+      "name" : "数字 0",
+      "short" : "0"
+    },
+    {
+      "keycode" : "0x0028",
+      "name" : "回车 Return",
+      "short" : "⏎"
+    },
+    {
+      "keycode" : "0x0029",
+      "name" : "Esc",
+      "short" : "Esc"
+    },
+    {
+      "keycode" : "0x002A",
+      "name" : "删除 Backspace",
+      "short" : "⌫"
+    },
+    {
+      "keycode" : "0x002B",
+      "name" : "Tab",
+      "short" : "⇥"
+    },
+    {
+      "keycode" : "0x002C",
+      "name" : "空格",
+      "short" : "空格"
+    },
+    {
+      "keycode" : "0x002D",
+      "name" : "减号 -",
+      "short" : "-"
+    },
+    {
+      "keycode" : "0x002E",
+      "name" : "等号 =",
+      "short" : "="
+    },
+    {
+      "keycode" : "0x002F",
+      "name" : "左方括号 [",
+      "short" : "["
+    },
+    {
+      "keycode" : "0x0030",
+      "name" : "右方括号 ]",
+      "short" : "]"
+    },
+    {
+      "keycode" : "0x0031",
+      "name" : "反斜杠 \\",
+      "short" : "\\"
+    },
+    {
+      "keycode" : "0x0033",
+      "name" : "分号 ;",
+      "short" : ";"
+    },
+    {
+      "keycode" : "0x0034",
+      "name" : "引号 '",
+      "short" : "'"
+    },
+    {
+      "keycode" : "0x0035",
+      "name" : "反引号 `",
+      "short" : "`"
+    },
+    {
+      "keycode" : "0x0036",
+      "name" : "逗号 ,",
+      "short" : ","
+    },
+    {
+      "keycode" : "0x0037",
+      "name" : "句号 .",
+      "short" : "."
+    },
+    {
+      "keycode" : "0x0038",
+      "name" : "斜杠 /",
+      "short" : "/"
+    },
+    {
+      "keycode" : "0x0039",
+      "name" : "大写锁定 Caps Lock",
+      "short" : "⇪"
+    },
+    {
+      "keycode" : "0x003A",
+      "name" : "F1",
+      "short" : "F1"
+    },
+    {
+      "keycode" : "0x003B",
+      "name" : "F2",
+      "short" : "F2"
+    },
+    {
+      "keycode" : "0x003C",
+      "name" : "F3",
+      "short" : "F3"
+    },
+    {
+      "keycode" : "0x003D",
+      "name" : "F4",
+      "short" : "F4"
+    },
+    {
+      "keycode" : "0x003E",
+      "name" : "F5",
+      "short" : "F5"
+    },
+    {
+      "keycode" : "0x003F",
+      "name" : "F6",
+      "short" : "F6"
+    },
+    {
+      "keycode" : "0x0040",
+      "name" : "F7",
+      "short" : "F7"
+    },
+    {
+      "keycode" : "0x0041",
+      "name" : "F8",
+      "short" : "F8"
+    },
+    {
+      "keycode" : "0x0042",
+      "name" : "F9",
+      "short" : "F9"
+    },
+    {
+      "keycode" : "0x0043",
+      "name" : "F10",
+      "short" : "F10"
+    },
+    {
+      "keycode" : "0x0044",
+      "name" : "F11",
+      "short" : "F11"
+    },
+    {
+      "keycode" : "0x0045",
+      "name" : "F12",
+      "short" : "F12"
+    },
+    {
+      "keycode" : "0x0068",
+      "name" : "F13",
+      "short" : "F13"
+    },
+    {
+      "keycode" : "0x0069",
+      "name" : "F14",
+      "short" : "F14"
+    },
+    {
+      "keycode" : "0x006A",
+      "name" : "F15",
+      "short" : "F15"
+    },
+    {
+      "keycode" : "0x006B",
+      "name" : "F16",
+      "short" : "F16"
+    },
+    {
+      "keycode" : "0x006C",
+      "name" : "F17",
+      "short" : "F17"
+    },
+    {
+      "keycode" : "0x006D",
+      "name" : "F18",
+      "short" : "F18"
+    },
+    {
+      "keycode" : "0x006E",
+      "name" : "F19",
+      "short" : "F19"
+    },
+    {
+      "keycode" : "0x006F",
+      "name" : "F20",
+      "short" : "F20"
+    },
+    {
+      "keycode" : "0x0070",
+      "name" : "F21",
+      "short" : "F21"
+    },
+    {
+      "keycode" : "0x0071",
+      "name" : "F22",
+      "short" : "F22"
+    },
+    {
+      "keycode" : "0x0072",
+      "name" : "F23",
+      "short" : "F23"
+    },
+    {
+      "keycode" : "0x0073",
+      "name" : "F24",
+      "short" : "F24"
+    },
+    {
+      "keycode" : "0x0046",
+      "name" : "截屏 Print Screen",
+      "short" : "PrtSc"
+    },
+    {
+      "keycode" : "0x0047",
+      "name" : "Scroll Lock",
+      "short" : "ScrLk"
+    },
+    {
+      "keycode" : "0x0048",
+      "name" : "Pause",
+      "short" : "Pause"
+    },
+    {
+      "keycode" : "0x0049",
+      "name" : "插入 Insert",
+      "short" : "Ins"
+    },
+    {
+      "keycode" : "0x004A",
+      "name" : "Home",
+      "short" : "Home"
+    },
+    {
+      "keycode" : "0x004B",
+      "name" : "向上翻页 Page Up",
+      "short" : "PgUp"
+    },
+    {
+      "keycode" : "0x004C",
+      "name" : "向前删除 Delete",
+      "short" : "⌦"
+    },
+    {
+      "keycode" : "0x004D",
+      "name" : "End",
+      "short" : "End"
+    },
+    {
+      "keycode" : "0x004E",
+      "name" : "向下翻页 Page Down",
+      "short" : "PgDn"
+    },
+    {
+      "keycode" : "0x004F",
+      "name" : "右",
+      "short" : "→"
+    },
+    {
+      "keycode" : "0x0050",
+      "name" : "左",
+      "short" : "←"
+    },
+    {
+      "keycode" : "0x0051",
+      "name" : "下",
+      "short" : "↓"
+    },
+    {
+      "keycode" : "0x0052",
+      "name" : "上",
+      "short" : "↑"
+    },
+    {
+      "keycode" : "0x0065",
+      "name" : "应用菜单",
+      "short" : "菜单"
+    }
+  ],
+  "layerFunctions" : [
+    {
+      "base" : "0x5220",
+      "keycode" : "base + layer (0–31)",
+      "name" : "按住时切到该层",
+      "short" : "MO"
+    },
+    {
+      "base" : "0x5260",
+      "keycode" : "base + layer (0–31)",
+      "name" : "开关该层",
+      "short" : "TG"
+    },
+    {
+      "base" : "0x5200",
+      "keycode" : "base + layer (0–31)",
+      "name" : "切换到该层",
+      "short" : "TO"
+    },
+    {
+      "base" : "0x52C0",
+      "keycode" : "base + layer (0–31)",
+      "name" : "按住临时、连按切换",
+      "short" : "TT"
+    },
+    {
+      "base" : "0x5280",
+      "keycode" : "base + layer (0–31)",
+      "name" : "下一个键用该层",
+      "short" : "OSL"
+    },
+    {
+      "base" : "0x5240",
+      "keycode" : "base + layer (0–31)",
+      "name" : "设为默认层",
+      "short" : "DF"
+    }
+  ],
+  "lighting" : [
+    {
+      "keycode" : "0x7820",
+      "name" : "灯光开关",
+      "short" : "灯开关"
+    },
+    {
+      "keycode" : "0x7821",
+      "name" : "下一个灯效",
+      "short" : "灯效 →"
+    },
+    {
+      "keycode" : "0x7822",
+      "name" : "上一个灯效",
+      "short" : "灯效 ←"
+    },
+    {
+      "keycode" : "0x7823",
+      "name" : "色相加",
+      "short" : "色相 +"
+    },
+    {
+      "keycode" : "0x7824",
+      "name" : "色相减",
+      "short" : "色相 −"
+    },
+    {
+      "keycode" : "0x7825",
+      "name" : "饱和度加",
+      "short" : "饱和 +"
+    },
+    {
+      "keycode" : "0x7826",
+      "name" : "饱和度减",
+      "short" : "饱和 −"
+    },
+    {
+      "keycode" : "0x7827",
+      "name" : "灯光亮度加",
+      "short" : "灯亮 +"
+    },
+    {
+      "keycode" : "0x7828",
+      "name" : "灯光亮度减",
+      "short" : "灯亮 −"
+    },
+    {
+      "keycode" : "0x7829",
+      "name" : "灯效速度加",
+      "short" : "灯速 +"
+    },
+    {
+      "keycode" : "0x782A",
+      "name" : "灯效速度减",
+      "short" : "灯速 −"
+    }
+  ],
+  "media" : [
+    {
+      "keycode" : "0x00A8",
+      "name" : "静音",
+      "short" : "静音"
+    },
+    {
+      "keycode" : "0x00AA",
+      "name" : "音量减",
+      "short" : "音量 −"
+    },
+    {
+      "keycode" : "0x00A9",
+      "name" : "音量加",
+      "short" : "音量 +"
+    },
+    {
+      "keycode" : "0x00AE",
+      "name" : "播放 / 暂停",
+      "short" : "播放"
+    },
+    {
+      "keycode" : "0x00AC",
+      "name" : "上一首",
+      "short" : "上一首"
+    },
+    {
+      "keycode" : "0x00AB",
+      "name" : "下一首",
+      "short" : "下一首"
+    },
+    {
+      "keycode" : "0x00BC",
+      "name" : "快退",
+      "short" : "快退"
+    },
+    {
+      "keycode" : "0x00BB",
+      "name" : "快进",
+      "short" : "快进"
+    },
+    {
+      "keycode" : "0x00AD",
+      "name" : "停止播放",
+      "short" : "停止"
+    },
+    {
+      "keycode" : "0x00BE",
+      "name" : "屏幕亮度减",
+      "short" : "亮度 −"
+    },
+    {
+      "keycode" : "0x00BD",
+      "name" : "屏幕亮度加",
+      "short" : "亮度 +"
+    },
+    {
+      "keycode" : "0x00C1",
+      "name" : "调度中心（Mission Control）",
+      "short" : "调度"
+    },
+    {
+      "keycode" : "0x00C2",
+      "name" : "启动台（Launchpad）",
+      "short" : "启动台"
+    },
+    {
+      "keycode" : "0x00B2",
+      "name" : "计算器",
+      "short" : "计算器"
+    },
+    {
+      "keycode" : "0x00B1",
+      "name" : "邮件",
+      "short" : "邮件"
+    },
+    {
+      "keycode" : "0x00B0",
+      "name" : "推出",
+      "short" : "推出"
+    },
+    {
+      "keycode" : "0x00A6",
+      "name" : "系统睡眠",
+      "short" : "睡眠"
+    },
+    {
+      "keycode" : "0x00CD",
+      "name" : "鼠标上移",
+      "short" : "鼠标↑"
+    },
+    {
+      "keycode" : "0x00CE",
+      "name" : "鼠标下移",
+      "short" : "鼠标↓"
+    },
+    {
+      "keycode" : "0x00CF",
+      "name" : "鼠标左移",
+      "short" : "鼠标←"
+    },
+    {
+      "keycode" : "0x00D0",
+      "name" : "鼠标右移",
+      "short" : "鼠标→"
+    },
+    {
+      "keycode" : "0x00D1",
+      "name" : "鼠标左键",
+      "short" : "左键"
+    },
+    {
+      "keycode" : "0x00D2",
+      "name" : "鼠标右键",
+      "short" : "右键"
+    },
+    {
+      "keycode" : "0x00D3",
+      "name" : "鼠标中键",
+      "short" : "中键"
+    },
+    {
+      "keycode" : "0x00D9",
+      "name" : "滚轮向上",
+      "short" : "滚轮↑"
+    },
+    {
+      "keycode" : "0x00DA",
+      "name" : "滚轮向下",
+      "short" : "滚轮↓"
+    }
+  ],
+  "modifierBits" : [
+    {
+      "bit" : "0x01",
+      "name" : "Control",
+      "symbol" : "⌃"
+    },
+    {
+      "bit" : "0x02",
+      "name" : "Shift",
+      "symbol" : "⇧"
+    },
+    {
+      "bit" : "0x04",
+      "name" : "Option",
+      "symbol" : "⌥"
+    },
+    {
+      "bit" : "0x08",
+      "name" : "Command",
+      "symbol" : "⌘"
+    },
+    {
+      "bit" : "0x10",
+      "name" : "Right-hand modifiers",
+      "symbol" : "右"
+    }
+  ],
+  "modifiers" : [
+    {
+      "keycode" : "0x00E0",
+      "name" : "左 Control",
+      "short" : "⌃"
+    },
+    {
+      "keycode" : "0x00E1",
+      "name" : "左 Shift",
+      "short" : "⇧"
+    },
+    {
+      "keycode" : "0x00E2",
+      "name" : "左 Option",
+      "short" : "⌥"
+    },
+    {
+      "keycode" : "0x00E3",
+      "name" : "左 Command",
+      "short" : "⌘"
+    },
+    {
+      "keycode" : "0x00E4",
+      "name" : "右 Control",
+      "short" : "⌃"
+    },
+    {
+      "keycode" : "0x00E5",
+      "name" : "右 Shift",
+      "short" : "⇧"
+    },
+    {
+      "keycode" : "0x00E6",
+      "name" : "右 Option",
+      "short" : "⌥"
+    },
+    {
+      "keycode" : "0x00E7",
+      "name" : "右 Command",
+      "short" : "⌘"
+    }
+  ],
+  "neverAssigned" : [
+    "0x7C00 QK_BOOT",
+    "0x7C01 QK_REBOOT",
+    "0x7C03 QK_CLEAR_EEPROM",
+    "custom keycodes marked hiddenInPicker"
+  ],
+  "note" : "QMK keycodes as VIA protocol 11 and 12 send them. Macro and custom keycode bases differ per protocol; see keyboards.json.",
+  "numpad" : [
+    {
+      "keycode" : "0x0053",
+      "name" : "Num Lock",
+      "short" : "Num"
+    },
+    {
+      "keycode" : "0x0054",
+      "name" : "小键盘 /",
+      "short" : "/"
+    },
+    {
+      "keycode" : "0x0055",
+      "name" : "小键盘 *",
+      "short" : "*"
+    },
+    {
+      "keycode" : "0x0056",
+      "name" : "小键盘 -",
+      "short" : "-"
+    },
+    {
+      "keycode" : "0x0057",
+      "name" : "小键盘 +",
+      "short" : "+"
+    },
+    {
+      "keycode" : "0x0058",
+      "name" : "小键盘 Enter",
+      "short" : "Enter"
+    },
+    {
+      "keycode" : "0x0059",
+      "name" : "小键盘 1",
+      "short" : "1"
+    },
+    {
+      "keycode" : "0x005A",
+      "name" : "小键盘 2",
+      "short" : "2"
+    },
+    {
+      "keycode" : "0x005B",
+      "name" : "小键盘 3",
+      "short" : "3"
+    },
+    {
+      "keycode" : "0x005C",
+      "name" : "小键盘 4",
+      "short" : "4"
+    },
+    {
+      "keycode" : "0x005D",
+      "name" : "小键盘 5",
+      "short" : "5"
+    },
+    {
+      "keycode" : "0x005E",
+      "name" : "小键盘 6",
+      "short" : "6"
+    },
+    {
+      "keycode" : "0x005F",
+      "name" : "小键盘 7",
+      "short" : "7"
+    },
+    {
+      "keycode" : "0x0060",
+      "name" : "小键盘 8",
+      "short" : "8"
+    },
+    {
+      "keycode" : "0x0061",
+      "name" : "小键盘 9",
+      "short" : "9"
+    },
+    {
+      "keycode" : "0x0062",
+      "name" : "小键盘 0",
+      "short" : "0"
+    },
+    {
+      "keycode" : "0x0063",
+      "name" : "小键盘 .",
+      "short" : "."
+    },
+    {
+      "keycode" : "0x0067",
+      "name" : "小键盘 =",
+      "short" : "="
+    }
+  ],
+  "ranges" : [
+    {
+      "meaning" : "modifiers + basic key: (mods << 8) | key",
+      "range" : "0x0100–0x1FFF"
+    },
+    {
+      "meaning" : "mod-tap: 0x2000 | (mods << 8) | key",
+      "range" : "0x2000–0x3FFF"
+    },
+    {
+      "meaning" : "layer-tap: 0x4000 | (layer << 8) | key",
+      "range" : "0x4000–0x4FFF"
+    },
+    {
+      "meaning" : "one-shot modifier: 0x52A0 | mods",
+      "range" : "0x52A0–0x52BF"
+    },
+    {
+      "meaning" : "macro n (protocol 12 / 11)",
+      "range" : "0x7700/0x7702 + n"
+    },
+    {
+      "meaning" : "keyboard custom keycode n (protocol 12 / 11)",
+      "range" : "0x7E00/0x7F00 + n"
+    }
+  ],
+  "special" : [
+    {
+      "keycode" : "0x0000",
+      "name" : "无 KC_NO",
+      "short" : ""
+    },
+    {
+      "keycode" : "0x0001",
+      "name" : "透明 KC_TRNS",
+      "short" : "▽"
+    }
+  ]
+}

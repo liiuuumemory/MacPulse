@@ -1,6 +1,57 @@
 import Foundation
 import IOKit
 import Darwin
+import DiskArbitration
+
+/// A mounted local disk as Finder lists it: the startup disk and any attached drive, never disk images or network shares.
+struct VolumeInfo: Identifiable, Equatable {
+    /// The volume UUID, which survives renaming and remounting; the mount path when a volume has none.
+    let id: String
+    let name: String
+    let path: String
+    let total: Double
+    let free: Double
+    let isInternal: Bool
+    var used: Double { max(0, total - free) }
+
+    /// Local, browsable volumes in Finder's order: the startup disk first, then attached drives by name.
+    static func mounted() -> [VolumeInfo] {
+        let keys: [URLResourceKey] = [.volumeLocalizedNameKey, .volumeIsLocalKey, .volumeIsBrowsableKey, .volumeIsInternalKey,
+                                      .volumeUUIDStringKey, .volumeTotalCapacityKey, .volumeAvailableCapacityKey]
+        let session = DASessionCreate(kCFAllocatorDefault)
+        let list = (FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: [.skipHiddenVolumes]) ?? []).compactMap { url -> VolumeInfo? in
+            guard let values = try? url.resourceValues(forKeys: Set(keys)), values.volumeIsLocal == true, values.volumeIsBrowsable == true,
+                  let total = values.volumeTotalCapacity, total > 0 else { return nil }
+            // A mounted disk image looks like a drive in every resource value; only Disk Arbitration tells them apart.
+            if let session, let disk = DADiskCreateFromVolumePath(kCFAllocatorDefault, session, url as CFURL),
+               let description = DADiskCopyDescription(disk) as? [String: Any],
+               (description[kDADiskDescriptionDeviceModelKey as String] as? String)?.contains("Disk Image") == true
+                || (description[kDADiskDescriptionDeviceProtocolKey as String] as? String) == "Virtual Interface" { return nil }
+            return VolumeInfo(id: values.volumeUUIDString ?? url.path, name: values.volumeLocalizedName ?? url.lastPathComponent, path: url.path,
+                              total: Double(total), free: Double(values.volumeAvailableCapacity ?? 0),
+                              isInternal: url.path == "/" || values.volumeIsInternal == true)
+        }
+        return list.sorted { ($0.path == "/" ? 0 : $0.isInternal ? 1 : 2, $0.name) < ($1.path == "/" ? 0 : $1.isInternal ? 1 : 2, $1.name) }
+    }
+
+    /// The Mac's marketing name, such as "Mac mini (M5 Pro)", for the startup disk's icon.
+    static let productName: String = {
+        let entry = IORegistryEntryFromPath(kIOMainPortDefault, "IODeviceTree:/product")
+        defer { if entry != 0 { IOObjectRelease(entry) } }
+        guard entry != 0, let data = registry(entry, "product-name") as? Data else { return "" }
+        return String(decoding: data.prefix { $0 != 0 }, as: UTF8.self)
+    }()
+    /// A symbol of this kind of Mac for the startup disk.
+    static let macSymbol: String = {
+        let name = productName
+        if name.contains("mini") { return "macmini" }
+        if name.contains("Studio") { return "macstudio" }
+        if name.contains("MacBook") { return "laptopcomputer" }
+        if name.contains("iMac") { return "desktopcomputer" }
+        if name.contains("Mac Pro") { return "macpro.gen3" }
+        return "internaldrive"
+    }()
+}
 
 struct SensorValue: Identifiable {
     var id: String { key }
@@ -24,7 +75,8 @@ struct NetworkValue: Identifiable {
     var sent: UInt64 = 0
     var download: Double = 0
     var upload: Double = 0
-    var fullCounters = false
+    /// When the interface last went up or down; its counters only restart then.
+    var lastChange: Double = 0
 }
 struct ProcessUsage: Identifiable {
     var id: pid_t { pid }
@@ -49,6 +101,7 @@ struct Sample {
     var load: [Double] = []
     var diskTotal: Double = 0
     var diskFree: Double = 0
+    var volumes: [VolumeInfo] = []
     var diskRead: Double?
     var diskWrite: Double?
     var networks: [NetworkValue] = []
@@ -103,25 +156,23 @@ func counterDelta(_ current: UInt64, _ previous: UInt64) -> Double {
     current >= previous ? Double(current - previous) : 0
 }
 
-func parseNetworkCounters(_ text: String) -> [String: (UInt64, UInt64)] {
-    var result: [String: (UInt64, UInt64)] = [:]
-    for line in text.split(separator: "\n") {
-        let columns = line.split(whereSeparator: { $0.isWhitespace })
-        guard columns.count >= 10, columns[0].hasPrefix("en"), columns[2].hasPrefix("<Link#"),
-              let received = UInt64(columns[6]), let sent = UInt64(columns[9]) else { continue }
-        result[String(columns[0])] = (received, sent)
-    }
-    return result
+/// Interface byte counters reach ordinary apps as 32 bits in 1 KiB steps (getifaddrs and
+/// NET_RT_IFLIST2 alike), so a fast link wraps them every few seconds to minutes and the
+/// step is taken modulo 2^32. Resets are caught by the interface's last-change time instead.
+func wrappingDelta32(_ current: UInt64, _ previous: UInt64) -> Double {
+    Double((current &- previous) & 0xffff_ffff)
 }
 
-private func systemNetworkCounters() -> [String: (UInt64, UInt64)] {
-    // On this OS, even NET_RT_IFLIST2 is quantized/truncated for ordinary apps.
-    // Apple's netstat returns full counters under its own system entitlement.
-    // Run the fixed system executable directly via posix_spawn, with no shell or elevated access.
-    var buffer = [CChar](repeating: 0, count: 256 * 1024)
-    let length = mp_netstat(&buffer, buffer.count)
-    guard length > 0 else { return [:] }
-    return parseNetworkCounters(buffer.withUnsafeBytes { String(decoding: $0.prefix(length), as: UTF8.self) })
+/// What the views on screen need beyond the menu bar summary.
+struct SampleDetail: OptionSet {
+    let rawValue: Int
+    /// Something is visible: refresh CPU/GPU temperatures and chip power on every sample.
+    static let live = SampleDetail(rawValue: 1)
+    /// The panel or the processes page lists processes.
+    static let processes = SampleDetail(rawValue: 2)
+    /// The sensors page lists every SMC temperature (~25 ms per read).
+    static let allSensors = SampleDetail(rawValue: 4)
+    static let all: SampleDetail = [.live, .processes, .allSensors]
 }
 
 final class MetricsCollector {
@@ -136,6 +187,8 @@ final class MetricsCollector {
     private var previousDisk: [UInt64: (UInt64, UInt64)] = [:]
     private var previousTime: TimeInterval?
     private var previousProcess: [pid_t: UInt64] = [:]
+    /// Mounted volumes change rarely; they are listed again every 10 seconds.
+    private var volumeCache: (time: TimeInterval, list: [VolumeInfo])?
     private var processNames: [pid_t: String] = [:]
     private let ticksToNanoseconds: Double = {
         var info = mach_timebase_info_data_t(); mach_timebase_info(&info)
@@ -191,9 +244,8 @@ final class MetricsCollector {
         }
         sensorKeys.sort { $0.key < $1.key }
     }
-    /// `detailed` reads every sensor for visible panels; otherwise only what the menu bar,
-    /// alerts and the CPU/GPU summaries need.
-    func sample(detailed: Bool = true) -> Sample {
+    /// With an empty `detail`, reads only what the menu bar, alerts and the CPU/GPU summaries need.
+    func sample(detail: SampleDetail = .all) -> Sample {
         var s = Sample()
         let now = ProcessInfo.processInfo.systemUptime
         let elapsed = previousTime.map { now - $0 }
@@ -206,11 +258,11 @@ final class MetricsCollector {
         readNetwork(&s, dt: dt)
         readDisk(&s, dt: dt)
         readGPU(&s)
-        readSensors(&s, detailed: detailed)
-        readPower(&s, detailed: detailed, now: now)
+        readSensors(&s, detail: detail)
+        readPower(&s, live: detail.contains(.live), now: now)
         readBattery(&s)
         // Walking ~500 processes is only worth it while someone can see the list.
-        if detailed { readProcesses(&s, dt: dt) } else { previousProcess = [:] }
+        if detail.contains(.processes) { readProcesses(&s, dt: dt) } else { previousProcess = [:] }
         var average = [Double](repeating: 0, count: 3)
         if getloadavg(&average, 3) == 3 { s.load = average }
         switch ProcessInfo.processInfo.thermalState {
@@ -268,7 +320,6 @@ final class MetricsCollector {
         }
     }
     private func readNetwork(_ s: inout Sample, dt: Double?) {
-        let fullCounters = systemNetworkCounters()
         var pointer: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&pointer) == 0, let first = pointer else { return }
         defer { freeifaddrs(first) }
@@ -287,6 +338,7 @@ final class MetricsCollector {
             if Int32(address.pointee.sa_family) == AF_LINK, let raw = entry.ifa_data {
                 let data = raw.assumingMemoryBound(to: if_data.self).pointee
                 item.received = UInt64(data.ifi_ibytes); item.sent = UInt64(data.ifi_obytes)
+                item.lastChange = Double(data.ifi_lastchange.tv_sec) + Double(data.ifi_lastchange.tv_usec) / 1e6
             } else if Int32(address.pointee.sa_family) == AF_INET {
                 var text = [CChar](repeating: 0, count: Int(NI_MAXHOST))
                 if getnameinfo(address, socklen_t(address.pointee.sa_len), &text, socklen_t(text.count), nil, 0, NI_NUMERICHOST) == 0 { item.address = String(cString: text) }
@@ -298,18 +350,9 @@ final class MetricsCollector {
         }
         for name in entries.keys.sorted() {
             var entry = entries[name]!
-            var received: UInt64 = 0, sent: UInt64 = 0
-            if let full = fullCounters[name] {
-                entry.received = full.0; entry.sent = full.1
-                entry.fullCounters = true
-                entries[name] = entry
-            } else if mp_network_counters(name, &received, &sent) == 1 {
-                entry.received = received; entry.sent = sent
-                entries[name] = entry
-            }
-            if let old = previousNetwork[name], old.fullCounters == entry.fullCounters, let dt {
-                entry.download = counterDelta(entry.received, old.received) / dt
-                entry.upload = counterDelta(entry.sent, old.sent) / dt
+            if let old = previousNetwork[name], old.lastChange == entry.lastChange, let dt {
+                entry.download = wrappingDelta32(entry.received, old.received) / dt
+                entry.upload = wrappingDelta32(entry.sent, old.sent) / dt
             }
             s.networks.append(entry)
         }
@@ -320,6 +363,9 @@ final class MetricsCollector {
             s.diskTotal = Double(values.volumeTotalCapacity ?? 0)
             s.diskFree = Double(values.volumeAvailableCapacity ?? 0)
         }
+        let now = ProcessInfo.processInfo.systemUptime
+        if let cache = volumeCache, now - cache.time < 10 { s.volumes = cache.list }
+        else { s.volumes = VolumeInfo.mounted(); volumeCache = (now, s.volumes) }
         var current: [UInt64: (UInt64, UInt64)] = [:]
         var reads = 0.0, writes = 0.0
         let objects = services("IOBlockStorageDriver")
@@ -348,16 +394,17 @@ final class MetricsCollector {
             }
         }
     }
-    private func readSensors(_ s: inout Sample, detailed: Bool) {
+    private func readSensors(_ s: inout Sample, detail: SampleDetail) {
         s.smcAvailable = smc != 0
-        s.sensorsComplete = detailed
+        let all = detail.contains(.allSensors)
+        s.sensorsComplete = all
         // Each SMC read is ~0.2 ms and there are ~70 CPU/GPU keys. Temperatures move slowly,
-        // so with no panel open the summary is refreshed every 3 s; power and fans stay live.
+        // so with nothing open the summary is refreshed every 3 s; power and fans stay live.
         let now = ProcessInfo.processInfo.systemUptime
-        if !detailed, let cached = summaryTemperatures, now - cached.time >= 0, now - cached.time < 3 {
+        if !detail.contains(.live), let cached = summaryTemperatures, now - cached.time >= 0, now - cached.time < 3 {
             s.sensors = cached.values
         } else {
-            for (key, name) in sensorKeys where detailed || name == "CPU" || name == "GPU" {
+            for (key, name) in sensorKeys where all || name == "CPU" || name == "GPU" {
                 guard let value = readSMC(key), value > 0, value < 130 else { continue }
                 s.sensors.append(SensorValue(key: key, name: name, value: value, kind: "°C"))
             }
@@ -378,12 +425,12 @@ final class MetricsCollector {
             }
         }
     }
-    private func readPower(_ s: inout Sample, detailed: Bool, now: TimeInterval) {
+    private func readPower(_ s: inout Sample, live: Bool, now: TimeInterval) {
         guard powerCounters else { return }
         // Counters accumulate energy, so a 3 s interval gives the same average as three 1 s reads;
         // with no panel open, skip the IOReport round trip in between.
         var watts: [Double]
-        if !detailed, let last = lastPower, now - last.time >= 0, now - last.time < 3 {
+        if !live, let last = lastPower, now - last.time >= 0, now - last.time < 3 {
             watts = last.watts
         } else {
             var cpu = 0.0, gpu = 0.0, ane = 0.0

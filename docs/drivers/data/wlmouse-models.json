@@ -1,0 +1,545 @@
+{
+  "lodEncoding" : {
+    "0.7" : "0x87",
+    "1.0" : "0x01",
+    "1.2" : "0x12",
+    "2.0" : "0x02"
+  },
+  "models" : [
+    {
+      "angleTune" : true,
+      "dpiStep" : 50,
+      "english" : "HUAN",
+      "hyperMode" : true,
+      "independentXY" : true,
+      "lodMillimetres" : [
+        0.69999999999999996,
+        1,
+        2
+      ],
+      "maxDPI" : 30000,
+      "maxStages" : 6,
+      "name" : "幻",
+      "pollingRatesByProductId" : {
+        "0xA863" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA864" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ]
+      },
+      "sleep" : true,
+      "sleepInSeconds" : false,
+      "wiredProductId" : "0xA864"
+    },
+    {
+      "angleTune" : true,
+      "dpiStep" : 1,
+      "english" : "HUAN M",
+      "hyperMode" : true,
+      "independentXY" : true,
+      "lodMillimetres" : [
+        0.69999999999999996,
+        1,
+        2
+      ],
+      "maxDPI" : 50000,
+      "maxStages" : 6,
+      "name" : "幻 M",
+      "pollingRatesByProductId" : {
+        "0xA859" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA863" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ]
+      },
+      "sleep" : true,
+      "sleepInSeconds" : false,
+      "wiredProductId" : "0xA859"
+    },
+    {
+      "angleTune" : true,
+      "dpiStep" : 50,
+      "english" : "BEAST MIAO",
+      "hyperMode" : true,
+      "independentXY" : true,
+      "lodMillimetres" : [
+        0.69999999999999996,
+        1,
+        2
+      ],
+      "maxDPI" : 30000,
+      "maxStages" : 6,
+      "name" : "BEAST MIAO",
+      "pollingRatesByProductId" : {
+        "0xA866" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA867" : [
+          125,
+          250,
+          500,
+          1000
+        ],
+        "0xA882" : [
+          125,
+          250,
+          500,
+          1000
+        ]
+      },
+      "sleep" : true,
+      "sleepInSeconds" : false,
+      "wiredProductId" : "0xA867"
+    },
+    {
+      "angleTune" : true,
+      "dpiStep" : 50,
+      "english" : "STRIDER",
+      "hyperMode" : true,
+      "independentXY" : true,
+      "lodMillimetres" : [
+        0.69999999999999996,
+        1,
+        2
+      ],
+      "maxDPI" : 30000,
+      "maxStages" : 6,
+      "name" : "行者",
+      "pollingRatesByProductId" : {
+        "0xA872" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA873" : [
+          125,
+          250,
+          500,
+          1000
+        ],
+        "0xA882" : [
+          125,
+          250,
+          500,
+          1000
+        ]
+      },
+      "sleep" : true,
+      "sleepInSeconds" : false,
+      "wiredProductId" : "0xA873"
+    },
+    {
+      "angleTune" : true,
+      "dpiStep" : 50,
+      "english" : "YING",
+      "hyperMode" : true,
+      "independentXY" : true,
+      "lodMillimetres" : [
+        0.69999999999999996,
+        1,
+        2
+      ],
+      "maxDPI" : 30000,
+      "maxStages" : 6,
+      "name" : "影",
+      "pollingRatesByProductId" : {
+        "0xA874" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA875" : [
+          125,
+          250,
+          500,
+          1000
+        ],
+        "0xA882" : [
+          125,
+          250,
+          500,
+          1000
+        ]
+      },
+      "sleep" : true,
+      "sleepInSeconds" : false,
+      "wiredProductId" : "0xA875"
+    },
+    {
+      "angleTune" : true,
+      "dpiStep" : 50,
+      "english" : "SWORD X",
+      "hyperMode" : true,
+      "independentXY" : true,
+      "lodMillimetres" : [
+        0.69999999999999996,
+        1,
+        2
+      ],
+      "maxDPI" : 30000,
+      "maxStages" : 6,
+      "name" : "剑 X",
+      "pollingRatesByProductId" : {
+        "0xA878" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA879" : [
+          125,
+          250,
+          500,
+          1000
+        ],
+        "0xA882" : [
+          125,
+          250,
+          500,
+          1000
+        ]
+      },
+      "sleep" : true,
+      "sleepInSeconds" : false,
+      "wiredProductId" : "0xA879"
+    },
+    {
+      "angleTune" : true,
+      "dpiStep" : 50,
+      "english" : "BEAST MINI",
+      "hyperMode" : true,
+      "independentXY" : true,
+      "lodMillimetres" : [
+        1,
+        2
+      ],
+      "maxDPI" : 26000,
+      "maxStages" : 6,
+      "name" : "花•兽 Mini",
+      "pollingRatesByProductId" : {
+        "0xA882" : [
+          125,
+          250,
+          500,
+          1000
+        ],
+        "0xA885" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA886" : [
+          125,
+          250,
+          500,
+          1000
+        ]
+      },
+      "sleep" : true,
+      "sleepInSeconds" : false,
+      "wiredProductId" : "0xA886"
+    },
+    {
+      "angleTune" : true,
+      "dpiStep" : 50,
+      "english" : "BEAST MINI PRO",
+      "hyperMode" : true,
+      "independentXY" : true,
+      "lodMillimetres" : [
+        0.69999999999999996,
+        1,
+        2
+      ],
+      "maxDPI" : 30000,
+      "maxStages" : 6,
+      "name" : "花•兽 Mini PRO",
+      "pollingRatesByProductId" : {
+        "0xA868" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA869" : [
+          125,
+          250,
+          500,
+          1000
+        ],
+        "0xA882" : [
+          125,
+          250,
+          500,
+          1000
+        ]
+      },
+      "sleep" : true,
+      "sleepInSeconds" : false,
+      "wiredProductId" : "0xA869"
+    },
+    {
+      "angleTune" : true,
+      "dpiStep" : 50,
+      "english" : "BEAST MAX",
+      "hyperMode" : true,
+      "independentXY" : true,
+      "lodMillimetres" : [
+        0.69999999999999996,
+        1,
+        2
+      ],
+      "maxDPI" : 30000,
+      "maxStages" : 6,
+      "name" : "花•兽 MAX",
+      "pollingRatesByProductId" : {
+        "0xA880" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA881" : [
+          125,
+          250,
+          500,
+          1000
+        ],
+        "0xA882" : [
+          125,
+          250,
+          500,
+          1000
+        ]
+      },
+      "sleep" : true,
+      "sleepInSeconds" : false,
+      "wiredProductId" : "0xA881"
+    },
+    {
+      "angleTune" : true,
+      "dpiStep" : 50,
+      "english" : "BEAST X",
+      "hyperMode" : true,
+      "independentXY" : true,
+      "lodMillimetres" : [
+        1,
+        2
+      ],
+      "maxDPI" : 26000,
+      "maxStages" : 6,
+      "name" : "花•兽 X",
+      "pollingRatesByProductId" : {
+        "0xA882" : [
+          125,
+          250,
+          500,
+          1000
+        ],
+        "0xA883" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA884" : [
+          125,
+          250,
+          500,
+          1000
+        ]
+      },
+      "sleep" : true,
+      "sleepInSeconds" : false,
+      "wiredProductId" : "0xA884"
+    },
+    {
+      "angleTune" : true,
+      "dpiStep" : 50,
+      "english" : "BEAST X PRO",
+      "hyperMode" : true,
+      "independentXY" : true,
+      "lodMillimetres" : [
+        0.69999999999999996,
+        1,
+        2
+      ],
+      "maxDPI" : 30000,
+      "maxStages" : 6,
+      "name" : "花•兽 X PRO",
+      "pollingRatesByProductId" : {
+        "0xA870" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA871" : [
+          125,
+          250,
+          500,
+          1000
+        ],
+        "0xA882" : [
+          125,
+          250,
+          500,
+          1000
+        ]
+      },
+      "sleep" : true,
+      "sleepInSeconds" : false,
+      "wiredProductId" : "0xA871"
+    },
+    {
+      "angleTune" : true,
+      "dpiStep" : 50,
+      "english" : "BEAST G",
+      "hyperMode" : true,
+      "independentXY" : true,
+      "lodMillimetres" : [
+        0.69999999999999996,
+        1,
+        2
+      ],
+      "maxDPI" : 30000,
+      "maxStages" : 6,
+      "name" : "BEAST G",
+      "pollingRatesByProductId" : {
+        "0xA860" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA861" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA882" : [
+          125,
+          250,
+          500,
+          1000
+        ]
+      },
+      "sleep" : true,
+      "sleepInSeconds" : false,
+      "wiredProductId" : "0xA861"
+    },
+    {
+      "angleTune" : true,
+      "dpiStep" : 1,
+      "english" : "BEAST X V2",
+      "hyperMode" : true,
+      "independentXY" : true,
+      "lodMillimetres" : [
+        0.69999999999999996,
+        1,
+        2
+      ],
+      "maxDPI" : 50000,
+      "maxStages" : 6,
+      "name" : "花•兽 X V2",
+      "pollingRatesByProductId" : {
+        "0xA856" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ],
+        "0xA857" : [
+          125,
+          250,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ]
+      },
+      "sleep" : true,
+      "sleepInSeconds" : false,
+      "wiredProductId" : "0xA857"
+    }
+  ],
+  "pollingRateCodes" : {
+    "125" : "0x08",
+    "250" : "0x04",
+    "500" : "0x02",
+    "1000" : "0x01",
+    "2000" : "0x20",
+    "4000" : "0x40",
+    "8000" : "0x80"
+  },
+  "vendorId" : "0x36A7"
+}

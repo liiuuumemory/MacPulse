@@ -1,0 +1,7 @@
+Services:
+VendorID ProductID LocationID UsagePage Usage RegistryID  Transport Class                                Product                      UserClass               Built-In 
+0x1a86   0xfc16    0x123000   12        1     0x1000a04e1 USB       AppleUserHIDEventService             BNK 16                       AppleUserHIDEventDriver 0        
+0x1a86   0xfc16    0x123000   1         6     0x1000a04e7 USB       AppleUserHIDEventService             BNK 16                       AppleUserHIDEventDriver 0        
+0x1a86   0xfc16    0x123000   12        1     0x1000a04ce USB       AppleUserHIDDevice BNK 16                       AppleUserUSBHostHIDDevice 0        
+0x1a86   0xfc16    0x123000   1         6     0x1000a04cd USB       AppleUserHIDDevice BNK 16                       AppleUserUSBHostHIDDevice 0        
+0x1a86   0xfc16    0x123000   65376     97    0x1000a04cf USB       AppleUserHIDDevice BNK 16                       AppleUserUSBHostHIDDevice 0        

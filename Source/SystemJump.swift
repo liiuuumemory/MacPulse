@@ -72,6 +72,8 @@ enum SystemJump {
 enum JumpHighlight {
     case halo(horizontal: CGFloat, vertical: CGFloat)
     case card
+    /// A rounded tile exactly around the content, for compact items in a row (the rings).
+    case tile
     static let standard = JumpHighlight.halo(horizontal: 7, vertical: 6)
 }
 
@@ -94,8 +96,12 @@ struct JumpTarget: ViewModifier {
                     .padding(.horizontal, -horizontal).padding(.vertical, -vertical)
             case .card:
                 content
-                    .overlay(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(hovering ? 0.05 : 0)))
-                    .contentShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.primary.opacity(hovering ? 0.05 : 0)))
+                    .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            case .tile:
+                content
+                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.primary.opacity(hovering ? 0.08 : 0)))
+                    .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
         }
         .buttonStyle(.plain)

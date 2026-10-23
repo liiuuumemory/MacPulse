@@ -142,8 +142,10 @@ final class MouseCenter: ObservableObject {
     }
 }
 
+/// One mouse's driver page under Settings › 外设; `device` is its battery key ("wl-…") or "logi-…".
 struct MouseSettingsView: View {
     @ObservedObject var center: MouseCenter
+    let device: String
     @MouseViewState private var drafts: [Int: WLMouseSettings] = [:]
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -156,37 +158,10 @@ struct MouseSettingsView: View {
                 Spacer()
                 Button { center.refresh() } label: { Label("重新读取", systemImage: "arrow.clockwise") }.disabled(center.busy)
             }
-            ForEach(center.asleep, id: \.self) { name in
-                HStack(spacing: 12) {
-                    Image(systemName: "moon.zzz.fill").font(.title2).foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(name).font(.headline)
-                        Text("接收器已连接，但鼠标正在休眠或已关机。动一下鼠标，几秒内会自动读取。").font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                }.padding(16).settingsCard()
-            }
-            if center.loaded && center.wl.isEmpty && center.logi.isEmpty && center.asleep.isEmpty {
-                PreferenceCard(title: "没有找到可设置的鼠标") {
-                    Text("支持 WLMOUSE（新协议型号，接收器或有线）和罗技 HID++ 2.0 设备。确认接收器已插好、鼠标已唤醒后点“重新读取”。")
-                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-            } else if !center.loaded {
-                Text("正在读取鼠标设置…").font(.callout).foregroundStyle(.secondary)
-            }
-            ForEach(center.wl) { device in wlCard(device) }
-            ForEach(center.logi) { device in logiCard(device) }
-            supportCard
-            if center.logiPermissionDenied {
-                PreferenceCard(title: "罗技设备需要输入监控权限") {
-                    Text("macOS 要求先允许 MacPulse 使用“输入监控”，才能打开罗技接收器的设置通道。MacPulse 只发送 HID++ 设置命令，不记录按键。")
-                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    HStack {
-                        Button("请求权限") { LogitechHIDPP.requestAccess() }
-                        Button("打开系统设置") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!) }
-                    }
-                }
-            }
+            if let state = center.wlState(forKey: device) { wlCard(state) }
+            else if let state = center.logi.first(where: { "logi-" + $0.id == device }) { logiCard(state) }
+            else if !center.loaded { Text("正在读取鼠标设置…").font(.callout).foregroundStyle(.secondary) }
+            else { Text("这只鼠标已断开或正在休眠。动一下鼠标后点“重新读取”。").font(.callout).foregroundStyle(.secondary) }
         }
         .onAppear { if !center.loaded { center.refresh() } }
         // A sleeping mouse wakes when moved; retry quietly while this page is open.
@@ -197,40 +172,6 @@ struct MouseSettingsView: View {
             // A fresh read replaces drafts that have no pending edits.
             for state in states where drafts[state.id] == nil || drafts[state.id] == state.settings || !center.busy {
                 drafts[state.id] = state.settings
-            }
-        }
-    }
-
-    private var supportCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("支持的设备").font(.headline)
-            supportRow("WLMOUSE 万灵", badge: "已实测 花•兽 Mini PRO", tested: true,
-                       devices: "花•兽 Mini / Mini PRO / X / X PRO / X V2 / MAX、幻 / 幻 M、影、剑 X、行者、BEAST MIAO、BEAST G（8K / 4K / 1K 接收器或有线）",
-                       driver: "官方驱动：WLMOUSE HUB 网页版", link: "https://gm.wlmouse.gg")
-            supportRow("罗技 Logitech", badge: "未经实测", tested: false,
-                       devices: "支持 HID++ 2.0 的鼠标，经 Bolt / Unifying / Lightspeed 接收器、蓝牙或有线连接，如 MX Master、MX Anywhere、G 系列：电量、DPI、SmartShift、滚轮方向",
-                       driver: "官方驱动：Logi Options+ / G HUB", link: nil)
-            supportRow("其他蓝牙外设", badge: "仅电量", tested: true,
-                       devices: "向系统报告电量的设备，如妙控鼠标、妙控键盘、妙控板", driver: nil, link: nil)
-            Text("设置保存在鼠标里，换电脑也有效。固件升级、重新配对、恢复出厂、按键与宏请用官方驱动；官方驱动打开时不要在这里同时修改，以免互相覆盖。")
-                .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).settingsCard()
-    }
-    private func supportRow(_ title: String, badge: String, tested: Bool, devices: String, driver: String?, link: String?) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 8) {
-                Text(title).font(.body.weight(.medium))
-                Text(badge).font(.caption.weight(.medium))
-                    .padding(.horizontal, 6).padding(.vertical, 1)
-                    .background((tested ? Color.green : Color.orange).opacity(0.15), in: Capsule())
-                    .foregroundStyle(tested ? Color.green : Color.orange)
-            }
-            Text(devices).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if let driver {
-                HStack(spacing: 4) {
-                    Text(driver).font(.subheadline).foregroundStyle(.secondary)
-                    if let link, let url = URL(string: link) { Link(link.replacingOccurrences(of: "https://", with: ""), destination: url).font(.subheadline) }
-                }
             }
         }
     }
